@@ -35,7 +35,7 @@ stats_query(const T kernel) {
 }
 
 template <DistanceMeasure measure,
-          typename ValueT, typename KeyT, int D, int K, int KF, int KQuery,
+          typename ValueT, typename KeyT, int D, int DA, int K, int KF, int KQuery,
           int S, int BLOCK_DIM_X, typename BaseT = ValueT,
           typename BAddrT = int32_t, typename GAddrT = int32_t,
           bool DIST_STATS = false, bool OVERFLOW_STATS = false,
@@ -49,7 +49,7 @@ struct StatsQueryKernel {
   static constexpr int VISITED_SIZE = CACHE_SIZE - SORTED_SIZE;
   static constexpr int PRIOQ_SIZE = SORTED_SIZE - BEST_SIZE;
 
-  typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, BLOCK_DIM_X, VISITED_SIZE,
+  typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, DA, BLOCK_DIM_X, VISITED_SIZE,
                             PRIOQ_SIZE, BEST_SIZE, BaseT, BAddrT, DIST_STATS,
                             OVERFLOW_STATS>
       Cache;

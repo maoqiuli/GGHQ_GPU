@@ -34,7 +34,7 @@ __global__ void query(const T kernel) {
   kernel();
 }
 
-template <DistanceMeasure measure, typename ValueT, typename KeyT, int D, int K,
+template <DistanceMeasure measure, typename ValueT, typename KeyT, int D, int DA, int K,
           int KF, int KQuery, int S, int BLOCK_DIM_X, typename BaseT = ValueT,
           typename BAddrT = int32_t, typename GAddrT = int32_t,
           bool DIST_STATS = false, bool OVERFLOW_STATS = false,
@@ -51,7 +51,7 @@ struct QueryKernel {
   static constexpr int ITERATIONS_FOR_K = (K + BLOCK_DIM_X - 1) / BLOCK_DIM_X;
   static constexpr int ITERATIONS_FOR_S = (S + BLOCK_DIM_X - 1) / BLOCK_DIM_X;
 
-  typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, BLOCK_DIM_X,
+  typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, DA, BLOCK_DIM_X,
                          VISITED_SIZE, PRIOQ_SIZE, BEST_SIZE, BaseT, BAddrT,
                          DIST_STATS, OVERFLOW_STATS>
       Cache;
@@ -82,7 +82,7 @@ struct QueryKernel {
 
       const KeyT n = N_offset + static_cast<int>(blockid);
 
-      Cache cache(d_base, d_query, n, xi);
+      Cache cache(d_base, d_query, d_base_attr, d_query_attr, n, xi);
       __syncthreads();
 
       __shared__ KeyT s_knn[KS];
@@ -126,7 +126,7 @@ struct QueryKernel {
       }  // end iterations
 
       __syncthreads();
-      cache.write_best(d_query_results, n * num_parts + part, KQuery,
+      cache.filter_and_write_best(d_query_results, n * num_parts + part, KQuery,
                       part * N_base);
 
       if (WRITE_DISTS) {
@@ -152,6 +152,8 @@ struct QueryKernel {
 
   const BaseT* d_base;        // [Nall,D]
   const BaseT* d_query;       // [Nq,D]
+  const int* d_base_attr;        //
+  const int* d_query_attr;       //
   const KeyT* d_translation;  // [Nall]
 
   const KeyT* d_graph;            // [Nall,K]

@@ -45,10 +45,10 @@ DEFINE_string(
     "Mode: bq -> build_and_query, bs -> build_and_store, lq -> load_and_query");
 DEFINE_string(base_filename, "/home/maoqiuli21/nfs/data/deep/deep1m/base.1m.fbin", "path to file with base vectors");
 DEFINE_string(query_filename, "/home/maoqiuli21/nfs/data/deep/query.public.10K.fbin", "path to file with perform_query vectors");
-DEFINE_string(groundtruth_filename, "/home/maoqiuli21/nfs/data/deep/deep1m/groundtruth.1m.bin", "path to file with groundtruth vectors");
-DEFINE_string(graph_filename, "",
-              "path to file that contains the serialized graph");
-DEFINE_string(graph_dir, "./", "directory to store and load ggnn graph files.");
+DEFINE_string(base_attr_filename, "/home/maoqiuli21/nfs/data/label/label_deep_base_value_16.txt", "path to file with base attributes");
+DEFINE_string(query_attr_filename, "/home/maoqiuli21/nfs/data/label/label_deep_query_value_16_labeldim_8.txt", "path to file with query attributes");
+DEFINE_string(groundtruth_filename, "/home/maoqiuli21/nfs/data/label/deep_groundtruth_label_value_16_labeldim_8.bin", "path to file with groundtruth");
+DEFINE_string(graph_dir, "/home/maoqiuli21/nfs/index_ggnnlbsearch/sbf/deep1m_16_8/", "directory to store and load ggnn graph files.");
 DEFINE_double(tau, 0.5, "Parameter tau");
 DEFINE_int32(factor, 1000000, "Factor");
 DEFINE_int32(base, 1, "N_base: base x factor");
@@ -59,7 +59,7 @@ DEFINE_bool(grid_search, false,
             "Perform queries for a wide range of parameters.");
 
 int main(int argc, char* argv[]) {
-  FLAGS_log_dir = "/home/maoqiuli21/project/ggnn/build_local/log/";
+  FLAGS_log_dir = "/home/maoqiuli21/project/ggnn_lbsearch/build_local/log/";
   google::InitGoogleLogging(argv[0]);
   google::LogToStderr();
 
@@ -102,6 +102,8 @@ int main(int argc, char* argv[]) {
   //
   /// dimension of the dataset
   const int D = 96;
+  /// dimension of the qurey attribute
+  const int DA = 8;
   /// distance measure (Euclidean or Cosine)
   const DistanceMeasure measure = Euclidean;
   //
@@ -153,12 +155,14 @@ int main(int argc, char* argv[]) {
   const size_t N_base = FLAGS_base * FLAGS_factor;
   const int N_shard = FLAGS_shard * FLAGS_factor;
 
-  typedef GGNNMultiGPU<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, KBuild,
+  typedef GGNNMultiGPU<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, DA, KBuild,
                        KF, KQuery, S>
       GGNN;
   GGNN ggnn{
       FLAGS_base_filename,
       FLAGS_query_filename,
+      FLAGS_base_attr_filename,
+      FLAGS_query_attr_filename,
       file_exists(FLAGS_groundtruth_filename) ? FLAGS_groundtruth_filename : "",
       L,
       static_cast<float>(FLAGS_tau),

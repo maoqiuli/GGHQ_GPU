@@ -71,11 +71,11 @@ size_t getTotalSystemMemory()
  */
 template <DistanceMeasure measure,
           typename KeyT, typename ValueT, typename GAddrT, typename BaseT,
-          typename BAddrT, int D, int KBuild, int KF, int KQuery, int S>
+          typename BAddrT, int D, int DA, int KBuild, int KF, int KQuery, int S>
 struct GGNNMultiGPU {
 
   using Dataset = Dataset<KeyT, BaseT, BAddrT>;
-  using GGNNGPUInstance = GGNNGPUInstance<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, KBuild, KF, KQuery, S>;
+  using GGNNGPUInstance = GGNNGPUInstance<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, DA, KBuild, KF, KQuery, S>;
   using GGNNResults = GGNNResults<measure, KeyT, ValueT, BaseT, BAddrT, KQuery>;
 
   Dataset dataset;
@@ -94,13 +94,15 @@ struct GGNNMultiGPU {
 
   const bool generate_gt;
 
-  GGNNMultiGPU(const std::string& basePath, const std::string& queryPath,
+  GGNNMultiGPU(const std::string& basePath, const std::string& queryPath, const std::string& baseAttrPath, const std::string& queryAttrPath,
        const std::string& gtPath, const int L, const float tau_build, const size_t N_base = std::numeric_limits<size_t>::max())
-      : dataset{basePath, queryPath, gtPath, N_base},
+      : dataset{basePath, queryPath, baseAttrPath, queryAttrPath, gtPath, N_base},
         L{L},
         tau_build{tau_build},
         generate_gt{gtPath.empty()} {
     CHECK_EQ(dataset.D, D) << "DIM needs to be the same";
+    CHECK_EQ(dataset.D_base_attr, 1) << "DIM needs to be the same";
+    CHECK_EQ(dataset.D_query_attr, DA) << "DIM needs to be the same";
   }
 
   void ggnnMain(const std::vector<int>& gpus, const std::string& mode,

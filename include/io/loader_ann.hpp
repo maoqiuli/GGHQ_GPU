@@ -16,65 +16,91 @@ limitations under the License.
 
 #include <fstream>
 #include <string>
+#include <vector>
 #include "loader.hpp"
+
+
+void SplitString(const std::string &s, std::vector<int> &v, const std::string &c)
+{
+    std::string::size_type pos1, pos2;
+    pos2 = s.find(c);
+    pos1 = 0;
+
+    while (std::string::npos != pos2)
+    {
+        v.push_back(atof(s.substr(pos1, pos2 - pos1).c_str()));
+
+        pos1 = pos2 + c.size();
+        pos2 = s.find(c, pos1);
+    }
+    if (pos1 != s.length())
+        v.push_back(atof(s.substr(pos1).c_str()));
+}
+
 
 template <typename ValueT>
 class XVecsLoader : public Loader<ValueT> {
  public:
-  explicit XVecsLoader(const std::string& path) : Loader<ValueT>(path) {
-/*    // find dimension
-    this->hnd->seekg(0, std::ios::beg);
-    this->hnd->read(reinterpret_cast<char*>(&this->dimension), sizeof(int));
+  explicit XVecsLoader(const std::string& path, const bool is_txt) : Loader<ValueT>(path, is_txt) {
 
-    size_t stride = sizeof(uint32_t) + this->dimension * sizeof(ValueT);
+    if (is_txt)
+    {
+      std::string temp;
+      getline(*(this->hnd), temp);
+      std::vector<int> tmp2;
+      SplitString(temp, tmp2, " ");
+      this->dimension = tmp2[1];
+      this->num_elements = tmp2[0];
 
-    // calc file size
-    this->hnd->seekg(0, std::ios::beg);
-    std::streampos fsize = this->hnd->tellg();
-    this->hnd->seekg(0, std::ios::end);
-    fsize = this->hnd->tellg() - fsize;
+      DLOG(INFO) << "Open " << path << " with " << this->num_elements << " "
+                << this->dimension << "-dim attributes.";
+    }
+    else
+    {  
+      int32_t num, dim;
+      this->hnd->read((char *) &num, sizeof(int32_t));
+      this->hnd->read((char *) &dim, sizeof(int32_t));
+      this->dimension = dim;
+      this->num_elements = num;
 
-    this->num_elements = fsize / stride;
-    this->hnd->seekg(0, std::ios::beg);
-*/
-    
-    int32_t num, dim;
-    this->hnd->read((char *) &num, sizeof(int32_t));
-    this->hnd->read((char *) &dim, sizeof(int32_t));
-    this->dimension = dim;
-    this->num_elements = num;
-
-    DLOG(INFO) << "Open " << path << " with " << this->num_elements << " "
-               << this->dimension << "-dim vectors.";
+      DLOG(INFO) << "Open " << path << " with " << this->num_elements << " "
+                << this->dimension << "-dim vectors.";
+    }
   }
 
   void load(ValueT* dst, size_t skip, size_t num) override {
-    DLOG(INFO) << "Loading " << num << " vectors starting at " << skip
-               << " ...";
+    {
+      DLOG(INFO) << "Loading " << num << " vectors starting at " << skip
+                << " ...";
 
-/*    size_t stride = 1 * sizeof(uint32_t) + this->dimension * sizeof(ValueT);
-    this->hnd->seekg(stride * skip);
-
-    int32_t dim;
-
-    for (size_t n = 0; n < num; ++n) {
-      // skip dimension
-      this->hnd->read(reinterpret_cast<char*>(&dim), sizeof(int32_t));
-      CHECK_EQ(dim, this->dimension) << "dimension mismatch";
-
-      this->hnd->read(reinterpret_cast<char*>(dst),
-                      this->dimension * sizeof(ValueT));
-      dst += this->dimension;
+      this->hnd->read((char *) dst, num * this->dimension * sizeof(ValueT));
     }
-*/
-
-    this->hnd->read((char *) dst, num * this->dimension * sizeof(ValueT));
-    //this->hnd->read((char *) dst, this->num_elements * this->dimension * sizeof(ValueT));
-
     
     DLOG(INFO) << "Done";
   }
+
+  void load_attr(ValueT* dst, size_t skip, size_t num) override {
+    DLOG(INFO) << "Loading " << num << " attributes starting at " << skip
+              << " ...";
+
+    std::string temp;
+    int count = 0;
+    while (getline(*(this->hnd), temp))
+    {
+      std::vector<int> tmp2;
+      SplitString(temp, tmp2, " ");
+      for (int i = 0;i < this->dimension;i++)
+        dst[count + i] = tmp2[i];
+      count += this->dimension;
+    }
+
+    DLOG(INFO) << "Done";
+  }
 };
+
+
+
+
 
 using FVecsLoader = XVecsLoader<float>;
 using IVecsLoader = XVecsLoader<int>;

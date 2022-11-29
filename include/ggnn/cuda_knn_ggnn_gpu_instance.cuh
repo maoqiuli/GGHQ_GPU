@@ -68,7 +68,7 @@ __global__ void divide(ValueT* res, ValueT* input, ValueT N) {
  */
 template <DistanceMeasure measure,
           typename KeyT, typename ValueT, typename GAddrT, typename BaseT,
-          typename BAddrT, int D, int KBuild, int KF, int KQuery, int S>
+          typename BAddrT, int D, int DA, int KBuild, int KF, int KQuery, int S>
 struct GGNNGPUInstance {
   /// number of base points per shard
   int N_shard;
@@ -476,7 +476,7 @@ struct GGNNGPUInstance {
     CHECK_CUDA(cudaSetDevice(gpu_id));
     const auto& shard = ggnn_shards.at(shard_id%ggnn_shards.size());
 
-    typedef QueryKernel<measure, ValueT, KeyT, D, KBuild, KF, KQuery, S, BLOCK_DIM_X, BaseT,
+    typedef QueryKernel<measure, ValueT, KeyT, D, DA, KBuild, KF, KQuery, S, BLOCK_DIM_X, BaseT,
                         BAddrT, GAddrT, DIST_STATS, false, MAX_ITERATIONS, CACHE_SIZE, SORTED_SIZE, true>
         QueryKernel;
 
@@ -487,6 +487,8 @@ struct GGNNGPUInstance {
     QueryKernel query_kernel;
     query_kernel.d_base = shard.d_base;
     query_kernel.d_query = ggnn_query.d_query;
+    query_kernel.d_base_attr = dataset->h_base_attr;
+    query_kernel.d_query_attr = dataset->h_query_attr;
 
     query_kernel.d_graph = shard.d_graph;
     query_kernel.d_query_results = ggnn_query.d_query_result_ids;

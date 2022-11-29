@@ -39,9 +39,12 @@ template <typename KeyT, typename BaseT, typename BAddrT>
 struct Dataset {
   /// dataset vectors
   BaseT* h_base{nullptr};
-
   /// query vectors
   BaseT* h_query{nullptr};
+  /// dataset attributes
+  int* h_base_attr{nullptr};
+  /// query attributes
+  int* h_query_attr{nullptr};
   /// ground truth indices in the dataset for the given queries
   KeyT* gt{nullptr};
 
@@ -51,6 +54,10 @@ struct Dataset {
   int N_query{0};
   /// dimension of vectors in the dataset and query
   int D{0};
+  /// dimension of attributes in the dataset
+  int D_base_attr{0};
+  /// dimension of attributes in the query
+  int D_query_attr{0};
   /// number of nearest neighbors per ground truth entry
   int K_gt{0};
 
@@ -60,12 +67,12 @@ struct Dataset {
   std::vector<uint8_t> top1DuplicateEnd;
   std::vector<uint8_t> topKDuplicateEnd;
 
-  Dataset(const std::string& basePath, const std::string& queryPath,
+  Dataset(const std::string& basePath, const std::string& queryPath, const std::string& baseAttrPath, const std::string& queryAttrPath,
           const std::string& gtPath, const size_t N_base = std::numeric_limits<size_t>::max()) {
 
     VLOG(1) << "N_base: " << N_base;
 
-    bool success = loadBase(basePath, 0, 1000000000, N_base) && loadQuery(queryPath) && loadGT(gtPath);
+    bool success = loadBase(basePath, baseAttrPath, 0, 1000000000, N_base) && loadQuery(queryPath, queryAttrPath) && loadGT(gtPath);
 
     if (!success)
       throw std::runtime_error(
@@ -76,6 +83,8 @@ struct Dataset {
   ~Dataset() {
     freeBase();
     freeQuery();
+    freeBaseAttr();
+    freeQueryAttr();
     freeGT();
   }
 
@@ -98,6 +107,20 @@ struct Dataset {
     if (!h_base) D = 0;
   }
 
+  void freeBaseAttr() {
+    cudaFreeHost(h_base_attr);
+    h_base_attr = nullptr;
+    D_base_attr = 0;
+    if (!h_base) N_base = 0;
+  }
+
+  void freeQueryAttr() {
+    cudaFreeHost(h_query_attr);
+    h_query_attr = nullptr;
+    D_query_attr = 0;
+    if (!h_query) N_query = 0;
+  }
+
   void freeGT() {
     free(gt);
     gt = nullptr;
@@ -106,10 +129,11 @@ struct Dataset {
   }
 
   /// load base vectors from file
-  bool loadBase(const std::string& base_file, size_t from = 0, size_t end = 100000000,
+  bool loadBase(const std::string& base_file, const std::string& base_attr_file, size_t from = 0, size_t end = 100000000,
                 size_t num = std::numeric_limits<size_t>::max()) {
     freeBase();
-    XVecsLoader<BaseT> base_loader(base_file);
+    freeBaseAttr();
+    XVecsLoader<BaseT> base_loader(base_file, false);
 
     num = std::min(num, base_loader.Num() - from);
     num = std::min(num, end - from);
@@ -133,14 +157,21 @@ struct Dataset {
 
     base_loader.load(h_base, from, num);
 
+    XVecsLoader<int> base_attr_loader(base_attr_file, true);
+    D_base_attr = base_attr_loader.Dim();
+    const size_t base_attr_memsize = static_cast<BAddrT>(N_base) * D_base_attr * sizeof(int);
+    CHECK_CUDA(cudaMallocHost(&h_base_attr, base_attr_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
+    base_attr_loader.load_attr(h_base_attr, from, num);
+
     return true;
   }
 
   /// load query vectors from file
-  bool loadQuery(const std::string& query_file, KeyT from = 0,
+  bool loadQuery(const std::string& query_file, const std::string& query_attr_file, KeyT from = 0,
                  KeyT num = std::numeric_limits<KeyT>::max()) {
     freeQuery();
-    XVecsLoader<BaseT> query_loader(query_file);
+    freeQueryAttr();
+    XVecsLoader<BaseT> query_loader(query_file, false);
 
     num = std::min(num, query_loader.Num() - from);
     CHECK_GT(num, 0) << "The requested range contains no vectors.";
@@ -168,6 +199,12 @@ struct Dataset {
 
     query_loader.load(h_query, from, num);
 
+    XVecsLoader<int> query_attr_loader(query_attr_file, true);
+    D_query_attr = query_attr_loader.Dim();
+    const size_t query_attr_memsize = static_cast<BAddrT>(N_base) * D_query_attr * sizeof(int);
+    CHECK_CUDA(cudaMallocHost(&h_query_attr, query_attr_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
+    query_attr_loader.load_attr(h_query_attr, from, num);
+
     return true;
   }
 
@@ -190,7 +227,7 @@ struct Dataset {
       return true;
     }
 
-    XVecsLoader<KeyT> gt_loader(gt_file);
+    XVecsLoader<KeyT> gt_loader(gt_file, false);
 
     num = std::min(num, gt_loader.Num() - from);
     CHECK_GT(num, 0) << "The requested range contains no vectors.";

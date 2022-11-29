@@ -27,7 +27,7 @@ limitations under the License.
 #include "ggnn/utils/cuda_knn_utils.cuh"
 
 template <DistanceMeasure measure,
-          typename ValueT, typename KeyT, int KQuery, int D, int BLOCK_DIM_X,
+          typename ValueT, typename KeyT, int KQuery, int D, int DA, int BLOCK_DIM_X,
           int VISITED_SIZE = 256, int PRIOQ_SIZE = 128, int BEST_SIZE = 32,
           typename BaseT = ValueT, typename BAddrT = KeyT,
           bool DIST_STATS = false, bool OVERFLOW_STATS = false>
@@ -82,6 +82,9 @@ struct SimpleKNNCache {
   ValueT xi;
 
   Distance rs_dist_calc;
+
+  const int* d_base_attr;
+  const int* d_query_attr;
 
   //# threadIdx.x == 0 stats registers only
   int dist_calc_counter;
@@ -159,6 +162,24 @@ struct SimpleKNNCache {
         s_overflow_counter(OverflowPrivateTmpStorage()),
         s_sync(SyncPrivateTmpStorage()),
         rs_dist_calc(d_base, d_query, n){
+    initSharedStorage();
+    init();
+  }
+
+  __device__ __forceinline__ SimpleKNNCache(const BaseT* d_base,
+                                            const BaseT* d_query, 
+                                            const int* d_base_attr,
+                                            const int* d_query_attr,
+                                            const KeyT n,
+                                            const ValueT xi_criteria)
+      : xi(xi_criteria),
+        s_prioQ_head(PrioQRingPrivateTmpStorage()),
+        s_visited_head(CacheRingPrivateTmpStorage()),
+        s_overflow_counter(OverflowPrivateTmpStorage()),
+        s_sync(SyncPrivateTmpStorage()),
+        rs_dist_calc(d_base, d_query, n),
+        d_base_attr(d_base_attr),
+        d_query_attr(d_query_attr){
     initSharedStorage();
     init();
   }
@@ -385,6 +406,24 @@ struct SimpleKNNCache {
     for (int i = threadIdx.x; i < KQuery; i += BLOCK_DIM_X) {
       const KeyT idx = s_cache[i];
       d_buffer[n * stride + i] = idx + idx_offset;
+    }
+  }
+
+  __device__ __forceinline__ void filter_and_write_best(KeyT* d_buffer, const KeyT n,
+                                             int stride, int idx_offset) {
+    __shared__ int filter_number;
+    if (!threadIdx.x) filter_number = 0;
+    __syncthreads();
+    for (int i = 0; i < BEST_SIZE && filter_number < KQuery; i++) {
+      const KeyT idx = s_cache[i];
+      const int base_attr = d_base_attr[idx];
+      for (int j = threadIdx.x; j < DA; j += BLOCK_DIM_X) {
+        if (d_query_attr[n * DA + j] == base_attr) {
+          d_buffer[n * stride + filter_number] = idx + idx_offset;
+          filter_number++;
+        }
+        __syncthreads();
+      }
     }
   }
 

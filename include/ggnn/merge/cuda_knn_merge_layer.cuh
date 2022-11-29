@@ -58,7 +58,7 @@ struct MergeKernel {
   static constexpr bool DIST_STATS = false;
   static constexpr bool OVERFLOW_STATS = false;
 
-  typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, BLOCK_DIM_X, VISITED_SIZE,
+  typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, 1, BLOCK_DIM_X, VISITED_SIZE,
                           PRIOQ_SIZE, BEST_SIZE, BaseT, BAddrT, DIST_STATS,
                           OVERFLOW_STATS>
     Cache;

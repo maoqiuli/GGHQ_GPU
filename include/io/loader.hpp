@@ -23,8 +23,11 @@ class Loader {
  public:
   Loader() : dimension(0), num_elements(0) {}
 
-  explicit Loader(const std::string& path) : path(path) {
-    hnd = new std::ifstream(path, std::ios_base::in | std::ios_base::binary);
+  explicit Loader(const std::string& path, const bool is_txt) : path(path), is_txt(is_txt) {
+    if (is_txt)
+      hnd = new std::ifstream(path, std::ios_base::in);
+    else
+      hnd = new std::ifstream(path, std::ios_base::in | std::ios_base::binary);
 
     if (!hnd->good()) {
       hnd->close();
@@ -49,6 +52,7 @@ class Loader {
    * @param num  number of elements to read
    */
   virtual void load(ValueT* dst, size_t skip, size_t num) = 0;
+  virtual void load_attr(ValueT* dst, size_t skip, size_t num) = 0;
 
   int32_t Dim() const { return dimension; }
   int32_t Num() const { return num_elements; }
@@ -58,8 +62,12 @@ class Loader {
   std::string path;
   std::ifstream* hnd;
 
+  bool is_txt;
+
   int32_t dimension;
   int32_t num_elements;
 };
 
 #endif  // INCLUDE_IO_LOADER_HPP_
+
+
