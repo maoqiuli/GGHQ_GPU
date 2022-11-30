@@ -52,7 +52,7 @@ struct SimpleKNNCache {
 
   static constexpr int BEST_END = BEST_SIZE - 1;
 
-  typedef Distance<measure, ValueT, KeyT, D, BLOCK_DIM_X, BaseT, BAddrT> Distance;
+  typedef Distance<measure, ValueT, KeyT, D, DA, BLOCK_DIM_X, BaseT, BAddrT> Distance;
 
   union SyncTempStorage {
     KeyT cache;
@@ -85,6 +85,8 @@ struct SimpleKNNCache {
 
   const int* d_base_attr;
   const int* d_query_attr;
+
+  const bool is_search{false};
 
   //# threadIdx.x == 0 stats registers only
   int dist_calc_counter;
@@ -153,6 +155,19 @@ struct SimpleKNNCache {
     init();
   }
 
+  __device__ __forceinline__ SimpleKNNCache(const BaseT* d_base, const int* d_base_attr, const KeyT n,
+                                            const ValueT xi_criteria)
+      : xi(xi_criteria),
+        s_prioQ_head(PrioQRingPrivateTmpStorage()),
+        s_visited_head(CacheRingPrivateTmpStorage()),
+        s_overflow_counter(OverflowPrivateTmpStorage()),
+        s_sync(SyncPrivateTmpStorage()),
+        d_base_attr(d_base_attr),
+        rs_dist_calc(d_base, d_base_attr, n) {
+    initSharedStorage();
+    init();
+  }
+
   __device__ __forceinline__ SimpleKNNCache(const BaseT* d_base,
                                             const BaseT* d_query, const KeyT n,
                                             const ValueT xi_criteria)
@@ -177,7 +192,8 @@ struct SimpleKNNCache {
         s_visited_head(CacheRingPrivateTmpStorage()),
         s_overflow_counter(OverflowPrivateTmpStorage()),
         s_sync(SyncPrivateTmpStorage()),
-        rs_dist_calc(d_base, d_query, n),
+        rs_dist_calc(d_base, d_query, d_base_attr, d_query_attr, n),
+        is_search(true),
         d_base_attr(d_base_attr),
         d_query_attr(d_query_attr){
     initSharedStorage();
@@ -332,7 +348,7 @@ struct SimpleKNNCache {
       const KeyT other_m =
           (d_translation == nullptr) ? other_n : d_translation[other_n];
       clc_dist_start = clock();
-      const ValueT dist = rs_dist_calc.distance_synced(other_m);
+      const ValueT dist = is_search ? rs_dist_calc.distance_synced(other_m, DA) : rs_dist_calc.distance_synced(other_m);
       num_dist += 1;
       clc_dist_end = clock();
       clc_dist += (int)(clc_dist_end - clc_dist_start);

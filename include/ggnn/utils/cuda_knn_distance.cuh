@@ -37,10 +37,11 @@ struct QueryNorm {
  * other_id vector.
  */
 template <DistanceMeasure measure,
-          typename ValueT, typename KeyT, int D, int BLOCK_DIM_X,
+          typename ValueT, typename KeyT, int D, int DA, int BLOCK_DIM_X,
           typename BaseT = ValueT, typename AddrT = KeyT>
 struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing>::type {
   enum { ITEMS_PER_THREAD = (D - 1) / BLOCK_DIM_X + 1 };
+  enum { ATTRS_PER_THREAD = (DA - 1) / BLOCK_DIM_X + 1 };
 
   struct DistanceAndNorm {
     ValueT r_dist;
@@ -68,8 +69,12 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
     ValueT dist;
   };
 
+  const ValueT attr_dist = 2.0;
+
   const BaseT* d_base;
+  const int* d_base_attr;
   BaseT r_query[ITEMS_PER_THREAD];
+  int r_query_attr[ATTRS_PER_THREAD];
 
   TempStorage& s_temp_storage;
   __device__ __forceinline__ TempStorage& PrivateTmpStorage() {
@@ -87,6 +92,14 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
   }
 
   /**
+   * Distance dist_calc(d_base, d_query, d_base_attr, d_query_attr, blockIdx.x);
+   */
+  __device__ __forceinline__ Distance(const BaseT* d_base, const BaseT* d_query, const int* d_base_attr, const int* d_query_attr, const KeyT n)
+      : d_base(d_base), d_base_attr(d_base_attr), s_temp_storage(PrivateTmpStorage()) {
+    loadQueryPos(d_query+static_cast<AddrT>(n) * D, d_query_attr+static_cast<AddrT>(n) * DA);
+  }
+
+  /**
    * Distance dist_calc(d_base, blockIdx.x);
    */
   __device__ __forceinline__ Distance(const BaseT* d_base, const KeyT n)
@@ -95,6 +108,30 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
     // loadQueryPos(d_base+static_cast<AddrT>(n) * D);
   }
 
+  /**
+   * Distance dist_calc(d_base, d_base_attr, blockIdx.x);
+   */
+  __device__ __forceinline__ Distance(const BaseT* d_base, const int* d_base_attr, const KeyT n)
+      : d_base(d_base), d_base_attr(d_base_attr), s_temp_storage(PrivateTmpStorage()) {
+    loadQueryPos(d_base+static_cast<AddrT>(n) * D, d_base_attr+static_cast<AddrT>(n));
+  }
+
+  template <DistanceMeasure m = measure, typename std::enable_if<m == Euclidean, int>::type = 0> // euclidean distance version
+  __device__ __forceinline__ void loadQueryPos(const BaseT* d_query, const int* d_query_attr)
+  {
+    for (int item = 0; item < ITEMS_PER_THREAD; ++item) {
+      const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
+      if (read_dim < D) {
+        r_query[item] = *(d_query+read_dim);
+      }
+    }
+    for (int item = 0; item < ATTRS_PER_THREAD; ++item) {
+      const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
+      if (read_dim < DA) {
+        r_query_attr[item] = *(d_query_attr+read_dim);
+      }
+    }
+  }
   template <DistanceMeasure m = measure, typename std::enable_if<m == Euclidean, int>::type = 0> // euclidean distance version
   __device__ __forceinline__ void loadQueryPos(const BaseT* d_query)
   {
@@ -133,15 +170,6 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
    */
 
 
-  __device__ __forceinline__ void warpRecude(volatile ValueT* s_data, int tid){
-    if(BLOCK_DIM_X >= 64) s_data[tid] += s_data[tid + 32];
-    if(BLOCK_DIM_X >= 32) s_data[tid] += s_data[tid + 16];
-    if(BLOCK_DIM_X >= 16) s_data[tid] += s_data[tid + 8];
-    if(BLOCK_DIM_X >= 8) s_data[tid] += s_data[tid + 4];
-    if(BLOCK_DIM_X >= 4) s_data[tid] += s_data[tid + 2];
-    if(BLOCK_DIM_X >= 2) s_data[tid] += s_data[tid + 1];
-  }
-
   template <DistanceMeasure m = measure, typename std::enable_if<m == Euclidean, int>::type = 0> // euclidean distance version
   __device__ __forceinline__ ValueT distance(const KeyT other_id) {
     ValueT r_dist = 0.0f;
@@ -157,76 +185,6 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
     return BlockReduceDist(s_temp_storage.dist_temp_storage).Sum(r_dist);
   }
 
-  
-  // __device__ __forceinline__ ValueT distance(const KeyT other_id) {
-  //   ValueT dist = 0.0f;
-  //   for (int item = 0; item < ITEMS_PER_THREAD; ++item) {
-  //     const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
-  //     if (read_dim < D) {
-  //       ValueT pos_other =
-  //           r_query[item] - d_base[static_cast<AddrT>(other_id) * D + read_dim];
-  //       dist += pos_other * pos_other;
-  //     }
-  //   }
-  //   // __syncthreads();
-
-  //   volatile ValueT* vshm;
-  //   ValueT val;
-
-  //   if (BLOCK_DIM_X > 32) {
-  //     __shared__ ValueT r_dist[BLOCK_DIM_X];
-  //     r_dist[threadIdx.x] = dist;
-  //     __syncthreads();
-
-  //     for (int stride = BLOCK_DIM_X / 2; stride > 16; stride /= 2)
-  //     {
-  //       if (threadIdx.x < stride)
-  //       {
-  //         r_dist[threadIdx.x] += r_dist[threadIdx.x + stride];
-  //       }
-  //       __syncthreads();
-  //     }
-  //     vshm = r_dist;
-  //     val = vshm[threadIdx.x];
-  //   }
-  //   else {
-  //     val = dist;
-  //   }
-
-  //   val += __shfl_xor_sync(0xffffffff, val, 16);
-  //   val += __shfl_xor_sync(0xffffffff, val, 8);
-  //   val += __shfl_xor_sync(0xffffffff, val, 4);
-  //   val += __shfl_xor_sync(0xffffffff, val, 2);
-  //   val += __shfl_xor_sync(0xffffffff, val, 1);
-  //   return val;
-  // }
-
-
-  // __device__ __forceinline__ ValueT distance(const KeyT other_id) {
-  //   __shared__ ValueT r_dist[BLOCK_DIM_X];
-  //   r_dist[threadIdx.x] = 0.0f;
-  //   __syncthreads();
-  //   for (int item = 0; item < ITEMS_PER_THREAD; ++item) {
-  //     const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
-  //     if (read_dim < D) {
-  //       ValueT pos_other =
-  //           r_query[item] - d_base[static_cast<AddrT>(other_id) * D + read_dim];
-  //       r_dist[threadIdx.x] += pos_other * pos_other;
-  //     }
-  //   }
-  //   __syncthreads();
-
-  //   for (int stride = BLOCK_DIM_X / 2; stride > 0; stride /= 2)
-  //   {
-  //       if (threadIdx.x < stride)
-  //       {
-  //           r_dist[threadIdx.x] += r_dist[threadIdx.x + stride];
-  //       }
-  //       __syncthreads();
-  //   }
-
-  //   return r_dist[threadIdx.x];
-  // }
   
   template <DistanceMeasure m = measure, typename std::enable_if<m == Cosine, int>::type = 0> // cosine similarity version
   __device__ __forceinline__ ValueT distance(const KeyT other_id) {
@@ -266,15 +224,36 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
    */
   __device__ __forceinline__ ValueT distance_synced(const KeyT other_id) {
     ValueT dist = distance(other_id);
-    if (!threadIdx.x)
+    if (!threadIdx.x) {
+      if (r_query_attr[0] != d_base_attr[other_id]) {
+        dist *= attr_dist;
+      }
       s_temp_storage.dist = dist;
+    }
     __syncthreads();
 
-    // dist = distance(other_id);
-    // if (!threadIdx.x)
-    //   s_temp_storage.dist = dist;
-    // __syncthreads();
+    return s_temp_storage.dist;
+  }
 
+  __device__ __forceinline__ ValueT distance_synced(const KeyT other_id, const int D_query_attr) {
+    ValueT dist = distance(other_id);
+    __shared__ bool attrs_are_same;
+    if (!threadIdx.x) {
+      attrs_are_same = false;
+    }
+    __syncthreads(); 
+    for (int item = 0; item < ATTRS_PER_THREAD; ++item) {
+      const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
+      if (read_dim < D_query_attr) {
+        if (r_query_attr[item] == d_base_attr[other_id]) {
+          attrs_are_same = true;
+        }
+      }
+    }
+    if (!threadIdx.x) {
+      s_temp_storage.dist = attrs_are_same ? dist : dist * attr_dist;
+    }
+    __syncthreads(); 
     return s_temp_storage.dist;
   }
 };

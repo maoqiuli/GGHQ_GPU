@@ -104,7 +104,7 @@ struct MergeKernel {
     const KeyT m =
         (!layer_btm) ? n : d_translation[c_STs_offsets[layer_btm] + n];
 
-    Cache cache(d_base, m, xi);
+    Cache cache(d_base, d_base_attr, m, xi);
 
     const int s_offset = get_top_seg_offset(n);
 
@@ -190,6 +190,7 @@ struct MergeKernel {
   }
 
   const BaseT* d_base;        // [Nall,D]
+  const int* d_base_attr;        // 
   const KeyT* d_translation;  // [Nall]
   const KeyT* d_selection;    // [Sall]
 

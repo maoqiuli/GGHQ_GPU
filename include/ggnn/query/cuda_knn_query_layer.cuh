@@ -126,7 +126,7 @@ struct QueryKernel {
       }  // end iterations
 
       __syncthreads();
-      cache.filter_and_write_best(d_query_results, n * num_parts + part, KQuery,
+      cache.write_best(d_query_results, n * num_parts + part, KQuery,
                       part * N_base);
 
       if (WRITE_DISTS) {

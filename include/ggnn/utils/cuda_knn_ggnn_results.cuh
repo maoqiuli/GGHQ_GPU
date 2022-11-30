@@ -164,7 +164,7 @@ struct GGNNResults {
     VLOG(0) << "[CPU] partial merge completed. " << cpu_ms.count() << " ms.";
   }
 
-  void evaluateResults() {
+  float evaluateResults() {
     int c1 = 0;
     int c1_including_duplicates = 0;
     int cKQuery = 0;
@@ -217,6 +217,7 @@ struct GGNNResults {
     fp = fopen("./fout/recall.txt", "a");
     fprintf(fp, "%f\n", cKQuery * inv_num_points / KQuery);
     fclose(fp);
+    return cKQuery * inv_num_points / KQuery;
   }
 };
 

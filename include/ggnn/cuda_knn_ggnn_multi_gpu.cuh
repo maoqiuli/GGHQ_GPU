@@ -21,6 +21,7 @@ limitations under the License.
 #include <stdio.h>
 #include <cstring>
 #include <vector>
+#include <tuple>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -82,6 +83,8 @@ struct GGNNMultiGPU {
 
   /// one instance per GPU
   std::vector<GGNNGPUInstance> ggnn_gpu_instances;
+
+  std::vector<std::tuple<float, float, float, float>> result_vector;
 
   int num_parts {0};
   bool swap_to_disk {false};
@@ -160,6 +163,18 @@ struct GGNNMultiGPU {
         this->query(0.5f);
         this->query(0.6f);
       }
+      result_output();
+    }
+  }
+
+  void result_output() {
+    std::cout << "tau\trecall\tQPS\ttime pre query\t\n";
+    for (int i = 0; i < result_vector.size(); i++) {
+      std::cout << std::get<0>(result_vector[i]) << "\t";
+      std::cout << std::get<1>(result_vector[i]) << "\t";
+      std::cout << std::get<2>(result_vector[i]) << "\t";
+      std::cout << std::get<3>(result_vector[i]) << "\t";
+      std::cout << std::endl;
     }
   }
 
@@ -587,7 +602,9 @@ struct GGNNMultiGPU {
 
     // CPU Zone:
     ggnn_results.merge();
-    ggnn_results.evaluateResults();
+    float recall = ggnn_results.evaluateResults();
+
+    result_vector.push_back(std::make_tuple(tau_query, recall, 1000 * 1000 / time_pre_query.count(), time_pre_query.count()));
 
     // process the shards in reverse order during the next query for improved cache utilization
     process_shards_back_to_front = !process_shards_back_to_front;

@@ -558,6 +558,7 @@ struct GGNNGPUInstance {
 
     TopMergeKernel top_kernel;
     top_kernel.d_base = shard.d_base;
+    top_kernel.d_base_attr = dataset->h_base_attr;
     top_kernel.d_translation = getTranslation(shard_id, layer);
     top_kernel.d_graph = getGraph(shard_id, layer);
     top_kernel.d_nn1_dist_buffer = ggnn_buffer->d_nn1_dist_buffer;
@@ -587,6 +588,7 @@ struct GGNNGPUInstance {
 
     MergeKernel merge_kernel;
     merge_kernel.d_base = shard.d_base;
+    merge_kernel.d_base_attr = dataset->h_base_attr;
 
     merge_kernel.d_graph = shard.d_graph;
     merge_kernel.d_graph_buffer = ggnn_buffer->d_graph_buffer;

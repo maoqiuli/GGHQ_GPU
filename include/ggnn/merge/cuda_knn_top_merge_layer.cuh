@@ -59,13 +59,13 @@ struct TopMergeKernel {
     int clc_push = 0;
     clc_kernel_start = clock();
 
-    typedef Distance<measure, ValueT, KeyT, D, BLOCK_DIM_X, BaseT, BAddrT> Distance;
+    typedef Distance<measure, ValueT, KeyT, D, 1, BLOCK_DIM_X, BaseT, BAddrT> Distance;
     typedef KBestList<ValueT, KeyT, K, BLOCK_DIM_X> KBestList;
 
     const int n = N_offset + blockIdx.x;
     const int m = (!layer) ? n : d_translation[n];
 
-    Distance distCalc(d_base, m);
+    Distance distCalc(d_base, d_base_attr, m);
     KBestList best;
 
     const int S_plus_offset = S_offset * (S + 1);
@@ -122,6 +122,7 @@ struct TopMergeKernel {
   int layer;
 
   const BaseT* d_base;
+  const int* d_base_attr;        // 
   const KeyT* d_translation;
 
   KeyT* d_graph;

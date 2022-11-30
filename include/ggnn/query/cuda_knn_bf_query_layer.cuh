@@ -43,7 +43,7 @@ template <DistanceMeasure measure,
           typename BaseT = ValueT, typename BAddrT = int32_t, typename GAddrT = int32_t,
           bool WRITE_DISTS = false>
 struct BruteForceQueryKernel {
-  typedef Distance<measure, ValueT, KeyT, D, BLOCK_DIM_X, BaseT, BAddrT> Distance;
+  typedef Distance<measure, ValueT, KeyT, D, 1, BLOCK_DIM_X, BaseT, BAddrT> Distance;
   typedef KBestList<ValueT, KeyT, KQuery, BLOCK_DIM_X> KBestList;
 
   static constexpr int ITERATIONS_FOR_K_QUERY = (KQuery+BLOCK_DIM_X-1)/BLOCK_DIM_X;
