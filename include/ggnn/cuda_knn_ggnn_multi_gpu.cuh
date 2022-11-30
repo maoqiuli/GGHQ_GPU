@@ -151,8 +151,8 @@ struct GGNNMultiGPU {
       if (grid_search) {
         // for (int i=0; i<70; ++i)
         //   this->query(i*0.01f);
-        for (int i=55; i<=65; ++i){
-          this->query(i*0.01f);
+        for (int i=1; i<=10; ++i){
+          this->query(i*0.1f);
           // usleep(100);
         }
           
