@@ -451,7 +451,7 @@ struct GGNNMultiGPU {
         }
         for (int i = 0; i < num_iterations; i++)
           gpu_instance.waitForDiskIO(i);
-
+        gpu_instance.perfetchAttributes();
         VLOG(0) << "[GPU: " << gpu_id << "] load() done.";
       });
       threads.push_back(std::move(t));

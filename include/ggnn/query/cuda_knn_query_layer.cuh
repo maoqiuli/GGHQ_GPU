@@ -36,7 +36,7 @@ __global__ void query(const T kernel) {
 
 template <DistanceMeasure measure, typename ValueT, typename KeyT, int D, int DA, int K,
           int KF, int KQuery, int S, int BLOCK_DIM_X, typename BaseT = ValueT,
-          typename BAddrT = int32_t, typename GAddrT = int32_t,
+          typename BAddrT = KeyT, typename GAddrT = KeyT,
           bool DIST_STATS = false, bool OVERFLOW_STATS = false,
           int MAX_ITERATIONS = 400, int CACHE_SIZE = 512, int SORTED_SIZE = 256,
           bool WRITE_DISTS = false>
@@ -50,6 +50,7 @@ struct QueryKernel {
 
   static constexpr int ITERATIONS_FOR_K = (K + BLOCK_DIM_X - 1) / BLOCK_DIM_X;
   static constexpr int ITERATIONS_FOR_S = (S + BLOCK_DIM_X - 1) / BLOCK_DIM_X;
+  static constexpr int ITERATIONS_FOR_KS = (KS + BLOCK_DIM_X - 1) / BLOCK_DIM_X;
 
   typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, DA, BLOCK_DIM_X,
                          VISITED_SIZE, PRIOQ_SIZE, BEST_SIZE, BaseT, BAddrT,
@@ -92,8 +93,15 @@ struct QueryKernel {
       }
       __syncthreads();
 
+      __shared__ int s_att[KS];
+      for (int i = 0; i < ITERATIONS_FOR_S; ++i) {
+        const int s = i * BLOCK_DIM_X + threadIdx.x;
+        if (s < S) s_att[s] = *(d_base_attr + static_cast<BAddrT>(s_knn[s]));
+      }
+      __syncthreads();
+
       clc_fetch_start = clock();
-      cache.fetch(s_knn, nullptr, S);
+      cache.fetch(s_knn, s_att, nullptr, S);
       __syncthreads();
       clc_fetch_end = clock();
       clc_fetch += (int)(clc_fetch_end - clc_fetch_start);
@@ -116,11 +124,18 @@ struct QueryKernel {
         for (int i = 0; i < ITERATIONS_FOR_K; ++i) {
           const int k = i * BLOCK_DIM_X + threadIdx.x;
           if (k < K) s_knn[k] = d_graph[static_cast<GAddrT>(anchor) * K + k];
+          if (k < K) s_att[k] = d_per_attr[static_cast<GAddrT>(anchor) * K + k];
         }
 
+        // for (int i = 0; i < ITERATIONS_FOR_K; ++i) {
+        //   const int k = i * BLOCK_DIM_X + threadIdx.x;
+        //   // if (k < K) s_att[k] = *(d_base_attr + static_cast<BAddrT>(s_knn[k]));
+        //   if (k < K) s_att[k] = *(d_base_attr + static_cast<BAddrT>(anchor) + k);
+        // }
         __syncthreads();
+        
         clc_fetch_start = clock();
-        cache.fetch(s_knn, nullptr, K);
+        cache.fetch(s_knn, s_att, nullptr, K);
         clc_fetch_end = clock();
         clc_fetch += (int)(clc_fetch_end - clc_fetch_start);
       }  // end iterations
@@ -157,6 +172,7 @@ struct QueryKernel {
   const KeyT* d_translation;  // [Nall]
 
   const KeyT* d_graph;            // [Nall,K]
+  const int* d_per_attr;
   KeyT* d_query_results;          // [Nq,KQuery]
   ValueT* d_query_results_dists;  // [Nq,KQuery]
 

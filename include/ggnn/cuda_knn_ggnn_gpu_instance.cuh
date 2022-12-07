@@ -107,6 +107,8 @@ struct GGNNGPUInstance {
   // Graph Shards resident on the CPU (for swapping, loading, and storing)
   std::vector<GGNNGraphHost> ggnn_cpu_buffers;
 
+  int* per_attr{nullptr};
+
   curandGenerator_t gen;
 
   //TODO (lukas): merge the buffer-code in here?
@@ -183,6 +185,9 @@ struct GGNNGPUInstance {
     CHECK_CUDA(cudaPeekAtLastError());
     CHECK_CUDA(cudaDeviceSynchronize());
     CHECK_CUDA(cudaPeekAtLastError());
+
+    const size_t per_attr_memsize = N_shard * KBuild * sizeof(int);
+    CHECK_CUDA(cudaMallocHost(&per_attr, per_attr_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
   }
 
   GGNNGPUInstance(const GGNNGPUInstance& other)
@@ -199,6 +204,7 @@ struct GGNNGPUInstance {
      ggnn_shards.clear();
 
      delete ggnn_buffer;
+     cudaFreeHost(per_attr);
 
      CHECK_CUDA(cudaPeekAtLastError());
      CHECK_CUDA(cudaDeviceSynchronize());
@@ -469,6 +475,18 @@ struct GGNNGPUInstance {
     CHECK_CUDA(cudaPeekAtLastError());
   }
 
+  void perfetchAttributes()
+  {
+    KeyT* graph = ggnn_cpu_buffers[0].h_graph;
+    for (int i=0; i<N_shard; i++) {
+      for (int j=0; j<KBuild; j++) {
+        per_attr[i * KBuild + j] = dataset->h_base_attr[graph[i * KBuild + j]];
+        // per_attr[i * KBuild + j] = 0;
+        // printf("%d ... ", graph[i * KBuild + j]);
+      }
+    }
+  }
+
   // graph operations
 
   template <int BLOCK_DIM_X = 32, int MAX_ITERATIONS = 400, int CACHE_SIZE = 512, int SORTED_SIZE = 256, bool DIST_STATS = false>
@@ -491,6 +509,7 @@ struct GGNNGPUInstance {
     query_kernel.d_query_attr = dataset->h_query_attr;
 
     query_kernel.d_graph = shard.d_graph;
+    query_kernel.d_per_attr = per_attr;
     query_kernel.d_query_results = ggnn_query.d_query_result_ids;
     query_kernel.d_query_results_dists = ggnn_query.d_query_result_dists;
 

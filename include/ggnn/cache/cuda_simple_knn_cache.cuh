@@ -348,7 +348,50 @@ struct SimpleKNNCache {
       const KeyT other_m =
           (d_translation == nullptr) ? other_n : d_translation[other_n];
       clc_dist_start = clock();
-      const ValueT dist = is_search ? rs_dist_calc.distance_synced(other_m, DA) : rs_dist_calc.distance_synced(other_m);
+      const ValueT dist = rs_dist_calc.distance_synced(other_m);
+      num_dist += 1;
+      clc_dist_end = clock();
+      clc_dist += (int)(clc_dist_end - clc_dist_start);
+
+      if (criteria(dist)) {
+        clc_push_start = clock();
+        push(other_n, dist);
+        __syncthreads();
+        clc_push_end = clock();
+        clc_push += (int)(clc_push_end - clc_push_start);
+      }
+
+    }
+    __syncthreads();
+  }
+
+  __device__ __forceinline__ void fetch(KeyT* s_keys, int* s_atts, const KeyT* d_translation,
+                                        int len) {
+    __syncthreads();
+    clc_re_start = clock();
+    for (int item = 0; item < CACHE_ITEMS_PER_THREAD; ++item) {
+      const int i = item * BLOCK_DIM_X + threadIdx.x;
+      if (i < CACHE_SIZE) {
+        const KeyT n = s_cache[i];
+        for (int k = 0; n != EMPTY_KEY && k < len; k++) {
+          if (n == s_keys[k]) {
+            s_keys[k] = EMPTY_KEY;
+          }
+        }
+      }
+    }
+    clc_re_end = clock();
+    clc_re += (int)(clc_re_end - clc_re_start);
+
+    for (int k = 0; k < len; k++) {
+      __syncthreads();
+      const KeyT other_n = s_keys[k];
+      if (other_n == EMPTY_KEY) continue;
+      const KeyT other_m =
+          (d_translation == nullptr) ? other_n : d_translation[other_n];
+      clc_dist_start = clock();
+      const int other_att = s_atts[k];
+      const ValueT dist = rs_dist_calc.distance_synced(other_m, other_att, DA);
       num_dist += 1;
       clc_dist_end = clock();
       clc_dist += (int)(clc_dist_end - clc_dist_start);

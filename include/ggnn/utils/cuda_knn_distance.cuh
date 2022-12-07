@@ -235,7 +235,7 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
     return s_temp_storage.dist;
   }
 
-  __device__ __forceinline__ ValueT distance_synced(const KeyT other_id, const int D_query_attr) {
+  __device__ __forceinline__ ValueT distance_synced(const KeyT other_id, const int other_att, const int D_query_attr) {
     ValueT dist = distance(other_id);
     __shared__ bool attrs_are_same;
     if (!threadIdx.x) {
@@ -245,7 +245,7 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
     for (int item = 0; item < ATTRS_PER_THREAD; ++item) {
       const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
       if (read_dim < D_query_attr) {
-        if (r_query_attr[item] == d_base_attr[other_id]) {
+        if (r_query_attr[item] == other_att) {
           attrs_are_same = true;
         }
       }
