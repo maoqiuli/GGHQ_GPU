@@ -346,6 +346,8 @@ struct GGNNMultiGPU {
             DLOG(INFO) << "Refinement step " << refinement_step;
             gpu_instance.refine(part_id, i);
           }
+          // gpu_instance.downloadPartAsync(part_id, i);
+          // gpu_instance.perfetchAttributes();
           cudaEventRecord(stop, shard.stream);
 
           cudaEventSynchronize(stop);
@@ -451,7 +453,6 @@ struct GGNNMultiGPU {
         }
         for (int i = 0; i < num_iterations; i++)
           gpu_instance.waitForDiskIO(i);
-        gpu_instance.perfetchAttributes();
         VLOG(0) << "[GPU: " << gpu_id << "] load() done.";
       });
       threads.push_back(std::move(t));

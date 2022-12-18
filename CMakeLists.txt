@@ -12,8 +12,15 @@ set(CUDA_ARCH_LIST Auto)
 cuda_select_nvcc_arch_flags(CUDA_ARCH_FLAGS ${CUDA_ARCH_LIST})
 list(APPEND CUDA_NVCC_FLAGS ${CUDA_ARCH_FLAGS})
 
+FIND_PACKAGE( OpenMP REQUIRED)
+if(OPENMP_FOUND)
+    message("OPENMP FOUND")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
+
 set(CUB_INCLUDE_PATH "3rdparty/cub")
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -std=c++14 -Xptxas=-v --expt-relaxed-constexpr --default-stream per-thread" )
+set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -std=c++14 -Xptxas=-v --expt-relaxed-constexpr --default-stream per-thread -Xcompiler -fopenmp -lgomp -lpthread" )
 # debug
 # set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -G -g")
 # profile

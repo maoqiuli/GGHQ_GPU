@@ -69,7 +69,7 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
     ValueT dist;
   };
 
-  const ValueT attr_dist = 2.0;
+  const ValueT attr_dist = 2.5;
 
   const BaseT* d_base;
   const int* d_base_attr;

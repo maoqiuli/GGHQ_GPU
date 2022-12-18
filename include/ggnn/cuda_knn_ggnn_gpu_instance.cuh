@@ -18,6 +18,7 @@ limitations under the License.
 #include <limits>
 #include <string>
 #include <thread>
+#include <omp.h>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -108,6 +109,7 @@ struct GGNNGPUInstance {
   std::vector<GGNNGraphHost> ggnn_cpu_buffers;
 
   int* per_attr{nullptr};
+  size_t per_attr_memsize;
 
   curandGenerator_t gen;
 
@@ -186,7 +188,7 @@ struct GGNNGPUInstance {
     CHECK_CUDA(cudaDeviceSynchronize());
     CHECK_CUDA(cudaPeekAtLastError());
 
-    const size_t per_attr_memsize = N_shard * KBuild * sizeof(int);
+    per_attr_memsize = N_shard * KBuild * sizeof(int);
     CHECK_CUDA(cudaMallocHost(&per_attr, per_attr_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
   }
 
@@ -340,6 +342,8 @@ struct GGNNGPUInstance {
         VLOG(4) << "[GPU: " << gpu_id << "] part " << part_id << " is already loaded on cpu buffer " << shard_id%ggnn_cpu_buffers.size();
       }
       else {
+        const std::string part_attr_filename = graph_dir + "part_" + std::to_string(part_id) + ".attr";
+        perfetchAttributes_load(part_attr_filename);
         const std::string part_filename = graph_dir + "part_" + std::to_string(part_id) + ".ggnn";
         cpu_buffer.load(part_filename);
         VLOG(2) << "[GPU: " << gpu_id << "] loaded part " << part_id << " from " << part_filename.c_str();
@@ -395,7 +399,9 @@ struct GGNNGPUInstance {
         cudaStreamSynchronize(shard.stream);
         VLOG(4) << "[GPU: " << gpu_id << "] downloaded part " << part_id;
       }
-
+      perfetchAttributes(shard_id);
+      const std::string part_attr_filename = graph_dir + "part_" + std::to_string(part_id) + ".attr";
+      perfetchAttributes_store(part_attr_filename);
       const std::string part_filename = graph_dir + "part_" + std::to_string(part_id) + ".ggnn";
       cpu_buffer.store(part_filename);
       VLOG(2) << "[GPU: " << gpu_id << "] stored part " << part_id << " to " << part_filename.c_str();
@@ -475,16 +481,49 @@ struct GGNNGPUInstance {
     CHECK_CUDA(cudaPeekAtLastError());
   }
 
-  void perfetchAttributes()
+  void perfetchAttributes(const int shard_id = 0)
   {
-    KeyT* graph = ggnn_cpu_buffers[0].h_graph;
+    KeyT* graph = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()].h_graph;
+#pragma omp parallel for
     for (int i=0; i<N_shard; i++) {
       for (int j=0; j<KBuild; j++) {
         per_attr[i * KBuild + j] = dataset->h_base_attr[graph[i * KBuild + j]];
-        // per_attr[i * KBuild + j] = 0;
-        // printf("%d ... ", graph[i * KBuild + j]);
       }
     }
+  }
+
+  void perfetchAttributes_store(const std::string& filename, const int shard_id = 0)
+  {
+    std::ofstream outFile;
+
+    outFile.open(filename, std::ofstream::out | std::ofstream::binary |
+                               std::ofstream::trunc);
+
+    CHECK(outFile.is_open()) << "Unable to open " << filename;
+
+    outFile.write(reinterpret_cast<char*>(per_attr), per_attr_memsize);
+
+    outFile.close();
+  }
+
+  void perfetchAttributes_load(const std::string& filename, const int shard_id = 0)
+  {
+    std::ifstream inFile;
+
+    inFile.open(filename, std::ifstream::in | std::ifstream::binary);
+
+    CHECK(inFile.is_open()) << "Unable to open " << filename;
+
+    inFile.seekg(0, std::ifstream::end);
+    size_t filesize = inFile.tellg();
+    inFile.seekg(0, std::ifstream::beg);
+
+    CHECK_EQ(filesize, per_attr_memsize) << "Error on loading" << filename <<
+       ". File size of GGNNGraph does not match the expected size.";
+
+    inFile.read(reinterpret_cast<char*>(per_attr), per_attr_memsize);
+
+    inFile.close();
   }
 
   // graph operations

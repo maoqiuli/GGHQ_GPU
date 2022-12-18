@@ -46,8 +46,8 @@ DEFINE_string(
 DEFINE_string(base_filename, "/home/maoqiuli21/nfs/data/deep/deep1m/base.1m.fbin", "path to file with base vectors");
 DEFINE_string(query_filename, "/home/maoqiuli21/nfs/data/deep/query.public.10K.fbin", "path to file with perform_query vectors");
 DEFINE_string(base_attr_filename, "/home/maoqiuli21/nfs/data/label/label_deep_base_value_16.txt", "path to file with base attributes");
-DEFINE_string(query_attr_filename, "/home/maoqiuli21/nfs/data/label/label_deep_query_value_16_labeldim_8.txt", "path to file with query attributes");
-DEFINE_string(groundtruth_filename, "/home/maoqiuli21/nfs/data/label/deep_groundtruth_label_value_16_labeldim_8.bin", "path to file with groundtruth");
+DEFINE_string(query_attr_filename, "/home/maoqiuli21/nfs/data/label/label_deep_query_value_16_labeldim_1.txt", "path to file with query attributes");
+DEFINE_string(groundtruth_filename, "/home/maoqiuli21/nfs/data/label/deep_groundtruth_label_value_16_labeldim_1.bin", "path to file with groundtruth");
 DEFINE_string(graph_dir, "/home/maoqiuli21/nfs/index_ggnnlbsearch/nhq/deep1m_16/", "directory to store and load ggnn graph files.");
 DEFINE_double(tau, 0.5, "Parameter tau");
 DEFINE_int32(factor, 1000000, "Factor");
@@ -103,7 +103,7 @@ int main(int argc, char* argv[]) {
   /// dimension of the dataset
   const int D = 96;
   /// dimension of the qurey attribute
-  const int DA = 8;
+  const int DA = 1;
   /// distance measure (Euclidean or Cosine)
   const DistanceMeasure measure = Euclidean;
   //
