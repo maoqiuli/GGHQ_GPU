@@ -188,7 +188,7 @@ struct GGNNGPUInstance {
     CHECK_CUDA(cudaDeviceSynchronize());
     CHECK_CUDA(cudaPeekAtLastError());
 
-    per_attr_memsize = N_shard * KBuild * sizeof(int);
+    per_attr_memsize = N_shard * KBuild * 2 * sizeof(int);
     CHECK_CUDA(cudaMallocHost(&per_attr, per_attr_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
   }
 
@@ -386,10 +386,8 @@ struct GGNNGPUInstance {
   void storePartAsync(const std::string graph_dir, const int part_id, const int shard_id) {
     waitForDiskIO(shard_id);
     auto& cpu_buffer = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()];
-    auto store_part = [this, graph_dir, part_id, shard_id]() -> void {
       CHECK_CUDA(cudaSetDevice(gpu_id));
       auto& shard = ggnn_shards.at(shard_id%ggnn_shards.size());
-      auto& cpu_buffer = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()];
 
       if (cpu_buffer.current_part_id == part_id) {
         VLOG(4) << "[GPU: " << gpu_id << "] part " << part_id << " is already downloaded";
@@ -397,6 +395,7 @@ struct GGNNGPUInstance {
       else {
         cpu_buffer.downloadAsync(shard);
         cudaStreamSynchronize(shard.stream);
+        cpu_buffer.datamove();
         VLOG(4) << "[GPU: " << gpu_id << "] downloaded part " << part_id;
       }
       perfetchAttributes(shard_id);
@@ -405,24 +404,43 @@ struct GGNNGPUInstance {
       const std::string part_filename = graph_dir + "part_" + std::to_string(part_id) + ".ggnn";
       cpu_buffer.store(part_filename);
       VLOG(2) << "[GPU: " << gpu_id << "] stored part " << part_id << " to " << part_filename.c_str();
-    };
-    cpu_buffer.disk_io_thread = std::thread(store_part);
   }
 
   void downloadPartAsync(const int part_id, const int shard_id) {
     waitForDiskIO(shard_id);
     auto& cpu_buffer = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()];
-    auto download_part = [this, part_id, shard_id]() -> void {
       CHECK_CUDA(cudaSetDevice(gpu_id));
       auto& shard = ggnn_shards.at(shard_id%ggnn_shards.size());
-      auto& cpu_buffer = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()];
 
       cpu_buffer.downloadAsync(shard);
       cudaStreamSynchronize(shard.stream);
       cpu_buffer.current_part_id = part_id;
       VLOG(4) << "[GPU: " << gpu_id << "] downloaded part " << part_id;
-    };
-    cpu_buffer.disk_io_thread = std::thread(download_part);
+  }
+
+  void downloadAsync(const int part_id, const int shard_id) {
+    waitForDiskIO(shard_id);
+    auto& cpu_buffer = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()];
+      CHECK_CUDA(cudaSetDevice(gpu_id));
+      auto& shard = ggnn_shards.at(shard_id%ggnn_shards.size());
+
+      cpu_buffer.downloadAsync(shard);
+      cudaStreamSynchronize(shard.stream);
+      cpu_buffer.current_part_id = part_id;
+      VLOG(4) << "[GPU: " << gpu_id << "] downloaded part " << part_id;
+  }
+
+  void downloadAsyncMove(const int part_id, const int shard_id) {
+    waitForDiskIO(shard_id);
+    auto& cpu_buffer = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()];
+      CHECK_CUDA(cudaSetDevice(gpu_id));
+      auto& shard = ggnn_shards.at(shard_id%ggnn_shards.size());
+
+      cpu_buffer.downloadAsync(shard);
+      cudaStreamSynchronize(shard.stream);
+      cpu_buffer.datamove();
+      cpu_buffer.current_part_id = part_id;
+      VLOG(4) << "[GPU: " << gpu_id << "] downloaded part " << part_id;
   }
 
   void loadShardBaseDataAsync(const int part_id, const int shard_id) {
@@ -486,8 +504,8 @@ struct GGNNGPUInstance {
     KeyT* graph = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()].h_graph;
 #pragma omp parallel for
     for (int i=0; i<N_shard; i++) {
-      for (int j=0; j<KBuild; j++) {
-        per_attr[i * KBuild + j] = dataset->h_base_attr[graph[i * KBuild + j]];
+      for (int j=0; j<KBuild * 2; j++) {
+        per_attr[i * KBuild * 2 + j] = dataset->h_base_attr[graph[i * KBuild * 2 + j]];
       }
     }
   }
@@ -533,7 +551,7 @@ struct GGNNGPUInstance {
     CHECK_CUDA(cudaSetDevice(gpu_id));
     const auto& shard = ggnn_shards.at(shard_id%ggnn_shards.size());
 
-    typedef QueryKernel<measure, ValueT, KeyT, D, DA, KBuild, KF, KQuery, S, BLOCK_DIM_X, BaseT,
+    typedef QueryKernel<measure, ValueT, KeyT, D, DA, KBuild * 2, KF * 2, KQuery, S, BLOCK_DIM_X, BaseT,
                         BAddrT, GAddrT, DIST_STATS, false, MAX_ITERATIONS, CACHE_SIZE, SORTED_SIZE, true>
         QueryKernel;
 

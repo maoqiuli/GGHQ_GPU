@@ -46,9 +46,9 @@ DEFINE_string(
 DEFINE_string(base_filename, "/home/maoqiuli21/nfs/data/deep/deep1m/base.1m.fbin", "path to file with base vectors");
 DEFINE_string(query_filename, "/home/maoqiuli21/nfs/data/deep/query.public.10K.fbin", "path to file with perform_query vectors");
 DEFINE_string(base_attr_filename, "/home/maoqiuli21/nfs/data/label/label_deep_base_value_16.txt", "path to file with base attributes");
-DEFINE_string(query_attr_filename, "/home/maoqiuli21/nfs/data/label/label_deep_query_value_16_labeldim_1.txt", "path to file with query attributes");
-DEFINE_string(groundtruth_filename, "/home/maoqiuli21/nfs/data/label/deep_groundtruth_label_value_16_labeldim_1.bin", "path to file with groundtruth");
-DEFINE_string(graph_dir, "/home/maoqiuli21/nfs/index_ggnnlbsearch/nhq/deep1m_16/", "directory to store and load ggnn graph files.");
+DEFINE_string(query_attr_filename, "/home/maoqiuli21/nfs/data/label/label_deep_query_value_16_labeldim_2.txt", "path to file with query attributes");
+DEFINE_string(groundtruth_filename, "/home/maoqiuli21/nfs/data/label/deep_groundtruth_label_value_16_labeldim_2.bin", "path to file with groundtruth");
+DEFINE_string(graph_dir, "/home/maoqiuli21/nfs/index_ggnnlbsearch/adage/deep1m_16/", "directory to store and load ggnn graph files.");
 DEFINE_double(tau, 0.5, "Parameter tau");
 DEFINE_int32(factor, 1000000, "Factor");
 DEFINE_int32(base, 1, "N_base: base x factor");
@@ -98,12 +98,14 @@ int main(int argc, char* argv[]) {
   /// N*KBuild)
   using GAddrT = uint64_t;
   //
-  // dataset configuration (here: DEEP1B)
+  // dataset configuration (here: DEEP+16)
   //
-  /// dimension of the dataset
+  /// dimension of the vector
   const int D = 96;
+  /// dimension of the attribute
+  const int DBA = 16;
   /// dimension of the qurey attribute
-  const int DA = 1;
+  const int DA = 2;
   /// distance measure (Euclidean or Cosine)
   const DistanceMeasure measure = Euclidean;
   //
@@ -117,6 +119,7 @@ int main(int argc, char* argv[]) {
   const int S = 32;
   /// graph height / number of layers (4 usually performs best)
   const int L = 4;
+
   //
   // query configuration
   //

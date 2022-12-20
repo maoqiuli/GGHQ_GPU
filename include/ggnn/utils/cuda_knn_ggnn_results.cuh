@@ -213,10 +213,10 @@ struct GGNNResults {
     // LOG(INFO) << "r@" << KQuery << ": " << rKQuery * inv_num_points
     //           << " +duplicates: "
     //           << rKQuery_including_duplicates * inv_num_points;
-    FILE *fp = NULL;
-    fp = fopen("./fout/recall.txt", "a");
-    fprintf(fp, "%f\n", cKQuery * inv_num_points / KQuery);
-    fclose(fp);
+    // FILE *fp = NULL;
+    // fp = fopen("./fout/recall.txt", "a");
+    // fprintf(fp, "%f\n", cKQuery * inv_num_points / KQuery);
+    // fclose(fp);
     return cKQuery * inv_num_points / KQuery;
   }
 };

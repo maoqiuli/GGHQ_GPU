@@ -18,6 +18,7 @@ limitations under the License.
 #include <algorithm>
 #include <limits>
 #include <string>
+#include <vector>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -61,6 +62,8 @@ struct Dataset {
   /// number of nearest neighbors per ground truth entry
   int K_gt{0};
 
+  bool subdata{false};
+
   // indices within the ground truth list per point up to which result ids
   // need to be compared.
   // without duplicates in the dataset, each entry should just be 1 / KQuery
@@ -68,15 +71,17 @@ struct Dataset {
   std::vector<uint8_t> topKDuplicateEnd;
 
   Dataset(const std::string& basePath, const std::string& queryPath, const std::string& baseAttrPath, const std::string& queryAttrPath,
-          const std::string& gtPath, const size_t N_base = std::numeric_limits<size_t>::max()) {
+          const std::string& gtPath, const size_t N_base = std::numeric_limits<size_t>::max(), const bool is_subdata = false) {
+    subdata = is_subdata;
+    if (!subdata) {
+      VLOG(1) << "N_base: " << N_base;
 
-    VLOG(1) << "N_base: " << N_base;
+      bool success = loadBase(basePath, baseAttrPath, 0, 1000000000, N_base) && loadQuery(queryPath, queryAttrPath) && loadGT(gtPath);
 
-    bool success = loadBase(basePath, baseAttrPath, 0, 1000000000, N_base) && loadQuery(queryPath, queryAttrPath) && loadGT(gtPath);
-
-    if (!success)
-      throw std::runtime_error(
-          "failed to load dataset (see previous log entries for details).\n");
+      if (!success)
+        throw std::runtime_error(
+            "failed to load dataset (see previous log entries for details).\n");
+    }
   }
 
   //TODO(fabi): cleanup.
@@ -94,38 +99,48 @@ struct Dataset {
   Dataset& operator=(Dataset&&) = delete;
 
   void freeBase() {
-    cudaFreeHost(h_base);
+    if(h_base) cudaFreeHost(h_base);
     h_base = nullptr;
     N_base = 0;
     if (!h_query) D = 0;
   }
 
   void freeQuery() {
-    cudaFreeHost(h_query);
+    if(h_query) cudaFreeHost(h_query);
     h_query = nullptr;
     if (!gt) N_query = 0;
     if (!h_base) D = 0;
   }
 
   void freeBaseAttr() {
-    cudaFreeHost(h_base_attr);
+    if(h_base_attr) cudaFreeHost(h_base_attr);
     h_base_attr = nullptr;
     D_base_attr = 0;
     if (!h_base) N_base = 0;
   }
 
   void freeQueryAttr() {
-    cudaFreeHost(h_query_attr);
+    if(h_query_attr) cudaFreeHost(h_query_attr);
     h_query_attr = nullptr;
     D_query_attr = 0;
     if (!h_query) N_query = 0;
   }
 
   void freeGT() {
-    free(gt);
+    if(gt) free(gt);
     gt = nullptr;
     if (!h_query) N_query = 0;
     K_gt = 0;
+  }
+
+  void load_datasets(int n, int d, BaseT* h_base_all, std::vector<int>& data_ids) {
+    N_base = n;
+    D = d;
+    const size_t base_memsize = static_cast<BAddrT>(N_base) * D * sizeof(BaseT);
+    CHECK_CUDA(cudaMallocHost(&h_base, base_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
+    for (size_t i = 0; i < n; i++) {
+      memcpy(h_base + i * D, h_base_all + data_ids[i] * D, D * sizeof(BaseT));
+    }
   }
 
   /// load base vectors from file

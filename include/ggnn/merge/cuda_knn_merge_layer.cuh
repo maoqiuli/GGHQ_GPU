@@ -104,7 +104,7 @@ struct MergeKernel {
     const KeyT m =
         (!layer_btm) ? n : d_translation[c_STs_offsets[layer_btm] + n];
 
-    Cache cache(d_base, d_base_attr, m, xi);
+    Cache cache(d_base, m, xi);
 
     const int s_offset = get_top_seg_offset(n);
 
@@ -186,7 +186,6 @@ struct MergeKernel {
     clc_kernel_end = clock();
     clc_kernel = (int)(clc_kernel_end - clc_kernel_start);
     // if (!blockIdx.x && !threadIdx.x) printf("%d > %d    %d    %d    %d    %d    %d\n", layer_top, layer_btm, clc_kernel, clc_fetch, cache.clc_re, cache.clc_dist, cache.clc_push);
-
   }
 
   const BaseT* d_base;        // [Nall,D]

@@ -65,7 +65,7 @@ struct TopMergeKernel {
     const int n = N_offset + blockIdx.x;
     const int m = (!layer) ? n : d_translation[n];
 
-    Distance distCalc(d_base, d_base_attr, m);
+    Distance distCalc(d_base, m);
     KBestList best;
 
     const int S_plus_offset = S_offset * (S + 1);

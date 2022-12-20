@@ -52,6 +52,8 @@ struct SimpleKNNCache {
 
   static constexpr int BEST_END = BEST_SIZE - 1;
 
+  static constexpr int ATTRS_PER_THREAD = (DA - 1) / BLOCK_DIM_X + 1;
+
   typedef Distance<measure, ValueT, KeyT, D, DA, BLOCK_DIM_X, BaseT, BAddrT> Distance;
 
   union SyncTempStorage {
@@ -83,8 +85,7 @@ struct SimpleKNNCache {
 
   Distance rs_dist_calc;
 
-  const int* d_base_attr;
-  const int* d_query_attr;
+  
 
   const bool is_search{false};
 
@@ -155,18 +156,6 @@ struct SimpleKNNCache {
     init();
   }
 
-  __device__ __forceinline__ SimpleKNNCache(const BaseT* d_base, const int* d_base_attr, const KeyT n,
-                                            const ValueT xi_criteria)
-      : xi(xi_criteria),
-        s_prioQ_head(PrioQRingPrivateTmpStorage()),
-        s_visited_head(CacheRingPrivateTmpStorage()),
-        s_overflow_counter(OverflowPrivateTmpStorage()),
-        s_sync(SyncPrivateTmpStorage()),
-        d_base_attr(d_base_attr),
-        rs_dist_calc(d_base, d_base_attr, n) {
-    initSharedStorage();
-    init();
-  }
 
   __device__ __forceinline__ SimpleKNNCache(const BaseT* d_base,
                                             const BaseT* d_query, const KeyT n,
@@ -181,24 +170,7 @@ struct SimpleKNNCache {
     init();
   }
 
-  __device__ __forceinline__ SimpleKNNCache(const BaseT* d_base,
-                                            const BaseT* d_query, 
-                                            const int* d_base_attr,
-                                            const int* d_query_attr,
-                                            const KeyT n,
-                                            const ValueT xi_criteria)
-      : xi(xi_criteria),
-        s_prioQ_head(PrioQRingPrivateTmpStorage()),
-        s_visited_head(CacheRingPrivateTmpStorage()),
-        s_overflow_counter(OverflowPrivateTmpStorage()),
-        s_sync(SyncPrivateTmpStorage()),
-        rs_dist_calc(d_base, d_query, d_base_attr, d_query_attr, n),
-        is_search(true),
-        d_base_attr(d_base_attr),
-        d_query_attr(d_query_attr){
-    initSharedStorage();
-    init();
-  }
+
 
   __device__ __forceinline__ bool criteria(ValueT dist) {
     if (dist < s_dists[KQuery - 1] + xi) return true;
@@ -365,7 +337,7 @@ struct SimpleKNNCache {
     __syncthreads();
   }
 
-  __device__ __forceinline__ void fetch(KeyT* s_keys, int* s_atts, const KeyT* d_translation,
+  __device__ __forceinline__ void fetch(KeyT* s_keys, int* s_atts, int* query_attr, const KeyT* d_translation,
                                         int len) {
     __syncthreads();
     clc_re_start = clock();
@@ -383,15 +355,27 @@ struct SimpleKNNCache {
     clc_re_end = clock();
     clc_re += (int)(clc_re_end - clc_re_start);
 
+    __shared__ bool attrs_are_same;
     for (int k = 0; k < len; k++) {
       __syncthreads();
       const KeyT other_n = s_keys[k];
-      if (other_n == EMPTY_KEY) continue;
-      const KeyT other_m =
-          (d_translation == nullptr) ? other_n : d_translation[other_n];
-      clc_dist_start = clock();
       const int other_att = s_atts[k];
-      const ValueT dist = rs_dist_calc.distance_synced(other_m, other_att, DA);
+      if (other_n == EMPTY_KEY) continue;
+      if (!threadIdx.x) {
+        attrs_are_same = false;
+      }
+      __syncthreads(); 
+      for (int item = 0; item < ATTRS_PER_THREAD; ++item) {
+        const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
+        if (read_dim < DA) {
+          if (query_attr[item] == other_att) {
+            attrs_are_same = true;
+          }
+        }
+      }
+      if (!attrs_are_same) continue;
+      clc_dist_start = clock();
+      const ValueT dist = rs_dist_calc.distance_synced(other_n);
       num_dist += 1;
       clc_dist_end = clock();
       clc_dist += (int)(clc_dist_end - clc_dist_start);
@@ -468,23 +452,6 @@ struct SimpleKNNCache {
     }
   }
 
-  __device__ __forceinline__ void filter_and_write_best(KeyT* d_buffer, const KeyT n,
-                                             int stride, int idx_offset) {
-    __shared__ int filter_number;
-    if (!threadIdx.x) filter_number = 0;
-    __syncthreads();
-    for (int i = 0; i < BEST_SIZE && filter_number < KQuery; i++) {
-      const KeyT idx = s_cache[i];
-      const int base_attr = d_base_attr[idx];
-      for (int j = threadIdx.x; j < DA; j += BLOCK_DIM_X) {
-        if (d_query_attr[n * DA + j] == base_attr) {
-          d_buffer[n * stride + filter_number] = idx + idx_offset;
-          filter_number++;
-        }
-        __syncthreads();
-      }
-    }
-  }
 
   template <DistanceMeasure m = measure, typename std::enable_if<m == Euclidean, int>::type = 0> // euclidean distance version
   __device__ __forceinline__ float get_nn1_dist() {

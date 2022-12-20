@@ -42,6 +42,7 @@ struct GGNNGraphHost {
 
   /// neighborhood vectors
   KeyT* h_graph;
+  KeyT* h_graph_half;
   /// translation of upper layer points into lowest layer
   KeyT* h_translation;
   /// translation of upper layer points into one layer below
@@ -53,21 +54,28 @@ struct GGNNGraphHost {
   /// combined memory pool
   char* h_memory;
 
+  size_t graph_size;
+  size_t selection_translation_size;
+  size_t nn1_stats_size;
   size_t total_graph_size;
 
   int current_part_id {-1};
 
   std::thread disk_io_thread;
 
-  GGNNGraphHost(const int N, const int K, const int N_all, const int ST_all) {
+  size_t N;
+  size_t K;
+
+  GGNNGraphHost(const int n, const int k, const int N_all, const int ST_all) :
+    N{static_cast<size_t>(n)}, K{static_cast<size_t>(k)} 
+  {
     // just to make sure that everything is sufficiently aligned
     auto align8 = [](size_t size) -> size_t {return ((size+7)/8)*8;};
 
-    const size_t graph_size = align8(static_cast<size_t>(N_all) * K * sizeof(KeyT));
-    const size_t selection_translation_size = align8(ST_all * sizeof(KeyT));
-    // const size_t nn1_dist_buffer_size = N * sizeof(ValueT);
-    const size_t nn1_stats_size = align8(2 * sizeof(ValueT));
-    total_graph_size = graph_size + 2 * selection_translation_size + nn1_stats_size;
+    graph_size = align8(static_cast<size_t>(N_all) * K * sizeof(KeyT));
+    selection_translation_size = align8(ST_all * sizeof(KeyT));
+    nn1_stats_size = align8(2 * sizeof(ValueT));
+    total_graph_size = 2 * graph_size + 2 * selection_translation_size + nn1_stats_size;
 
     VLOG(1) << "GGNNGraphHost(): N: " << N << ", K: " << K
             << ", N_all: " << N_all << ", ST_all: " << ST_all
@@ -77,6 +85,8 @@ struct GGNNGraphHost {
 
     size_t pos = 0;
     h_graph = reinterpret_cast<KeyT*>(h_memory+pos);
+    pos += graph_size;
+    h_graph_half = reinterpret_cast<KeyT*>(h_memory+pos);
     pos += graph_size;
     h_translation = reinterpret_cast<KeyT*>(h_memory+pos);
     pos += selection_translation_size;
@@ -105,6 +115,12 @@ struct GGNNGraphHost {
 
   void downloadAsync(const GGNNGraphDevice& graph) {
     cudaMemcpyAsync(h_graph, graph.d_graph, total_graph_size, cudaMemcpyDeviceToHost, graph.stream);
+  }
+
+  void datamove() {
+    for (size_t i=0; i<N; i++) {
+      memcpy(h_graph + static_cast<KeyT>(2 * (N - 1 - i) * K), h_graph + static_cast<KeyT>((N - 1 - i) * K), K * sizeof(KeyT));
+    }
   }
 
   void uploadAsync(GGNNGraphDevice& graph) {

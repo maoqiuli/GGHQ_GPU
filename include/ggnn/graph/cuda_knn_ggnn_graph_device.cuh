@@ -68,7 +68,7 @@ struct GGNNGraphDevice {
     const size_t graph_size = align8(static_cast<size_t>(N_all) * K * sizeof(KeyT));
     const size_t selection_translation_size = align8(ST_all * sizeof(KeyT));
     const size_t nn1_stats_size = align8(2 * sizeof(ValueT));
-    total_graph_size = graph_size + 2 * selection_translation_size + nn1_stats_size;
+    total_graph_size = 2 * graph_size + 2 * selection_translation_size + nn1_stats_size;
     base_size = align8(static_cast<size_t>(N) * D * sizeof(BaseT));
 
     const size_t total_size = base_size+total_graph_size;
@@ -89,7 +89,7 @@ struct GGNNGraphDevice {
     d_base = reinterpret_cast<BaseT*>(d_memory+pos);
     pos += base_size;
     d_graph = reinterpret_cast<KeyT*>(d_memory+pos);
-    pos += graph_size;
+    pos += graph_size * 2;
     d_translation = reinterpret_cast<KeyT*>(d_memory+pos);
     pos += selection_translation_size;
     d_selection = reinterpret_cast<KeyT*>(d_memory+pos);

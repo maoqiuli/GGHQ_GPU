@@ -41,7 +41,6 @@ template <DistanceMeasure measure,
           typename BaseT = ValueT, typename AddrT = KeyT>
 struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing>::type {
   enum { ITEMS_PER_THREAD = (D - 1) / BLOCK_DIM_X + 1 };
-  enum { ATTRS_PER_THREAD = (DA - 1) / BLOCK_DIM_X + 1 };
 
   struct DistanceAndNorm {
     ValueT r_dist;
@@ -69,12 +68,9 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
     ValueT dist;
   };
 
-  const ValueT attr_dist = 2.5;
 
   const BaseT* d_base;
-  const int* d_base_attr;
   BaseT r_query[ITEMS_PER_THREAD];
-  int r_query_attr[ATTRS_PER_THREAD];
 
   TempStorage& s_temp_storage;
   __device__ __forceinline__ TempStorage& PrivateTmpStorage() {
@@ -92,14 +88,6 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
   }
 
   /**
-   * Distance dist_calc(d_base, d_query, d_base_attr, d_query_attr, blockIdx.x);
-   */
-  __device__ __forceinline__ Distance(const BaseT* d_base, const BaseT* d_query, const int* d_base_attr, const int* d_query_attr, const KeyT n)
-      : d_base(d_base), d_base_attr(d_base_attr), s_temp_storage(PrivateTmpStorage()) {
-    loadQueryPos(d_query+static_cast<AddrT>(n) * D, d_query_attr+static_cast<AddrT>(n) * DA);
-  }
-
-  /**
    * Distance dist_calc(d_base, blockIdx.x);
    */
   __device__ __forceinline__ Distance(const BaseT* d_base, const KeyT n)
@@ -108,30 +96,7 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
     // loadQueryPos(d_base+static_cast<AddrT>(n) * D);
   }
 
-  /**
-   * Distance dist_calc(d_base, d_base_attr, blockIdx.x);
-   */
-  __device__ __forceinline__ Distance(const BaseT* d_base, const int* d_base_attr, const KeyT n)
-      : d_base(d_base), d_base_attr(d_base_attr), s_temp_storage(PrivateTmpStorage()) {
-    loadQueryPos(d_base+static_cast<AddrT>(n) * D, d_base_attr+static_cast<AddrT>(n));
-  }
 
-  template <DistanceMeasure m = measure, typename std::enable_if<m == Euclidean, int>::type = 0> // euclidean distance version
-  __device__ __forceinline__ void loadQueryPos(const BaseT* d_query, const int* d_query_attr)
-  {
-    for (int item = 0; item < ITEMS_PER_THREAD; ++item) {
-      const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
-      if (read_dim < D) {
-        r_query[item] = *(d_query+read_dim);
-      }
-    }
-    for (int item = 0; item < ATTRS_PER_THREAD; ++item) {
-      const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
-      if (read_dim < DA) {
-        r_query_attr[item] = *(d_query_attr+read_dim);
-      }
-    }
-  }
   template <DistanceMeasure m = measure, typename std::enable_if<m == Euclidean, int>::type = 0> // euclidean distance version
   __device__ __forceinline__ void loadQueryPos(const BaseT* d_query)
   {
@@ -225,9 +190,6 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
   __device__ __forceinline__ ValueT distance_synced(const KeyT other_id) {
     ValueT dist = distance(other_id);
     if (!threadIdx.x) {
-      if (r_query_attr[0] != d_base_attr[other_id]) {
-        dist *= attr_dist;
-      }
       s_temp_storage.dist = dist;
     }
     __syncthreads();
@@ -235,27 +197,7 @@ struct Distance : std::conditional<measure == Cosine, QueryNorm<ValueT>, Nothing
     return s_temp_storage.dist;
   }
 
-  __device__ __forceinline__ ValueT distance_synced(const KeyT other_id, const int other_att, const int D_query_attr) {
-    ValueT dist = distance(other_id);
-    __shared__ bool attrs_are_same;
-    if (!threadIdx.x) {
-      attrs_are_same = false;
-    }
-    __syncthreads(); 
-    for (int item = 0; item < ATTRS_PER_THREAD; ++item) {
-      const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
-      if (read_dim < D_query_attr) {
-        if (r_query_attr[item] == other_att) {
-          attrs_are_same = true;
-        }
-      }
-    }
-    if (!threadIdx.x) {
-      s_temp_storage.dist = attrs_are_same ? dist : dist * attr_dist;
-    }
-    __syncthreads(); 
-    return s_temp_storage.dist;
-  }
+  
 };
 
 #endif  // INCLUDE_GGNN_UTILS_CUDA_KNN_DISTANCE_CUH_
