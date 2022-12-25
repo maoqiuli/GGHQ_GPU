@@ -61,14 +61,15 @@ struct GGNNGraphDevice {
 
   cudaStream_t stream;
 
-  GGNNGraphDevice(const int N, const int D, const int K, const int N_all, const int ST_all) {
+  GGNNGraphDevice(const int N, const int D, const int K, const int K_, const int N_all, const int ST_all) {
     // just to make sure that everything is sufficiently aligned
     auto align8 = [](size_t size) -> size_t {return ((size+7)/8)*8;};
 
-    const size_t graph_size = align8(static_cast<size_t>(N_all) * K * sizeof(KeyT));
+    const size_t graph_g_size = align8(static_cast<size_t>(N_all) * K * sizeof(KeyT));
+    const size_t graph_l_size = align8(static_cast<size_t>(N_all) * K_ * sizeof(KeyT));
     const size_t selection_translation_size = align8(ST_all * sizeof(KeyT));
     const size_t nn1_stats_size = align8(2 * sizeof(ValueT));
-    total_graph_size = 2 * graph_size + 2 * selection_translation_size + nn1_stats_size;
+    total_graph_size = graph_g_size + graph_l_size + 2 * selection_translation_size + nn1_stats_size;
     base_size = align8(static_cast<size_t>(N) * D * sizeof(BaseT));
 
     const size_t total_size = base_size+total_graph_size;
@@ -89,7 +90,7 @@ struct GGNNGraphDevice {
     d_base = reinterpret_cast<BaseT*>(d_memory+pos);
     pos += base_size;
     d_graph = reinterpret_cast<KeyT*>(d_memory+pos);
-    pos += graph_size * 2;
+    pos += graph_g_size + graph_l_size;
     d_translation = reinterpret_cast<KeyT*>(d_memory+pos);
     pos += selection_translation_size;
     d_selection = reinterpret_cast<KeyT*>(d_memory+pos);

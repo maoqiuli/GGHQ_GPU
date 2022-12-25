@@ -19,6 +19,7 @@ limitations under the License.
 #include <string>
 #include <thread>
 #include <omp.h>
+#include <cmath>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -69,7 +70,7 @@ __global__ void divide(ValueT* res, ValueT* input, ValueT N) {
  */
 template <DistanceMeasure measure,
           typename KeyT, typename ValueT, typename GAddrT, typename BaseT,
-          typename BAddrT, int D, int DA, int KBuild, int KF, int KQuery, int S>
+          typename BAddrT, int D, int DBA, int DA, int KBuild, int KF, int KBuild_, int KF_, int KQuery, int S>
 struct GGNNGPUInstance {
   /// number of base points per shard
   int N_shard;
@@ -108,8 +109,10 @@ struct GGNNGPUInstance {
   // Graph Shards resident on the CPU (for swapping, loading, and storing)
   std::vector<GGNNGraphHost> ggnn_cpu_buffers;
 
-  int* per_attr{nullptr};
+  unsigned* per_attr{nullptr};
   size_t per_attr_memsize;
+  int ATTRS_SIZE = ceil(log2(DBA));
+  int ATTRS_PER_INT = (sizeof(unsigned) * 8 / ATTRS_SIZE);
 
   curandGenerator_t gen;
 
@@ -152,7 +155,7 @@ struct GGNNGPUInstance {
     // allocate CPU memory first (fail early if out of memory)
     ggnn_cpu_buffers.reserve(num_cpu_buffers);
     for (int i=0; i < num_cpu_buffers; i++)
-      ggnn_cpu_buffers.emplace_back(N_shard, KBuild, N_all, ST_all);
+      ggnn_cpu_buffers.emplace_back(N_shard, KBuild, KBuild_, N_all, ST_all);
 
     //TODO (lukas): merge the buffer-code in here?
 
@@ -181,14 +184,14 @@ struct GGNNGPUInstance {
     ggnn_shards.reserve(num_shards);
 
     for (int i=0; i < num_shards; i++) {
-      ggnn_shards.emplace_back(N_shard, D, KBuild, N_all, ST_all);
+      ggnn_shards.emplace_back(N_shard, D, KBuild, KBuild_, N_all, ST_all);
     }
 
     CHECK_CUDA(cudaPeekAtLastError());
     CHECK_CUDA(cudaDeviceSynchronize());
     CHECK_CUDA(cudaPeekAtLastError());
 
-    per_attr_memsize = N_shard * KBuild * 2 * sizeof(int);
+    per_attr_memsize = ceil((float)N_shard / (float)ATTRS_PER_INT) * (KBuild + KBuild_) * sizeof(unsigned);
     CHECK_CUDA(cudaMallocHost(&per_attr, per_attr_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
   }
 
@@ -501,11 +504,17 @@ struct GGNNGPUInstance {
 
   void perfetchAttributes(const int shard_id = 0)
   {
+    int K = KBuild + KBuild_;
+    int N = ceil((float)N_shard / (float)ATTRS_PER_INT);
     KeyT* graph = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()].h_graph;
 #pragma omp parallel for
-    for (int i=0; i<N_shard; i++) {
-      for (int j=0; j<KBuild * 2; j++) {
-        per_attr[i * KBuild * 2 + j] = dataset->h_base_attr[graph[i * KBuild * 2 + j]];
+    for (int i=0; i < N; i++) {
+      for (int j=0; j < ATTRS_PER_INT; j++) {
+        int n = i * ATTRS_PER_INT + j;
+        if (n >= N_shard) break;
+        for (int k=0; k < K; k++) {
+          per_attr[i * K + k] = (per_attr[i * K + k]<<ATTRS_SIZE) + (unsigned)(dataset->h_base_attr[graph[n * K + k]]);
+        }
       }
     }
   }
@@ -551,7 +560,7 @@ struct GGNNGPUInstance {
     CHECK_CUDA(cudaSetDevice(gpu_id));
     const auto& shard = ggnn_shards.at(shard_id%ggnn_shards.size());
 
-    typedef QueryKernel<measure, ValueT, KeyT, D, DA, KBuild * 2, KF * 2, KQuery, S, BLOCK_DIM_X, BaseT,
+    typedef QueryKernel<measure, ValueT, KeyT, D, DBA, DA, KBuild + KBuild_, KF + KF_, KQuery, S, BLOCK_DIM_X, BaseT,
                         BAddrT, GAddrT, DIST_STATS, false, MAX_ITERATIONS, CACHE_SIZE, SORTED_SIZE, true>
         QueryKernel;
 

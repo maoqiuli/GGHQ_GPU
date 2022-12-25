@@ -373,6 +373,7 @@ struct SimpleKNNCache {
           }
         }
       }
+      __syncthreads(); 
       if (!attrs_are_same) continue;
       clc_dist_start = clock();
       const ValueT dist = rs_dist_calc.distance_synced(other_n);

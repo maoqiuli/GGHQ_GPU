@@ -45,10 +45,10 @@ DEFINE_string(
     "Mode: bq -> build_and_query, bs -> build_and_store, lq -> load_and_query");
 DEFINE_string(base_filename, "/home/maoqiuli21/nfs/data/deep/deep1m/base.1m.fbin", "path to file with base vectors");
 DEFINE_string(query_filename, "/home/maoqiuli21/nfs/data/deep/query.public.10K.fbin", "path to file with perform_query vectors");
-DEFINE_string(base_attr_filename, "/home/maoqiuli21/nfs/data/label/label_deep_base_value_16.txt", "path to file with base attributes");
-DEFINE_string(query_attr_filename, "/home/maoqiuli21/nfs/data/label/label_deep_query_value_16_labeldim_2.txt", "path to file with query attributes");
-DEFINE_string(groundtruth_filename, "/home/maoqiuli21/nfs/data/label/deep_groundtruth_label_value_16_labeldim_2.bin", "path to file with groundtruth");
-DEFINE_string(graph_dir, "/home/maoqiuli21/nfs/index_ggnnlbsearch/adage/deep1m_16/", "directory to store and load ggnn graph files.");
+DEFINE_string(base_attr_filename, "/home/maoqiuli21/nfs/data/label/", "path to file with base attributes");
+DEFINE_string(query_attr_filename, "/home/maoqiuli21/nfs/data/label/", "path to file with query attributes");
+DEFINE_string(groundtruth_filename, "/home/maoqiuli21/nfs/data/label/", "path to file with groundtruth");
+DEFINE_string(graph_dir, "/home/maoqiuli21/nfs/index_ggnnlbsearch/adage/", "directory to store and load ggnn graph files.");
 DEFINE_double(tau, 0.5, "Parameter tau");
 DEFINE_int32(factor, 1000000, "Factor");
 DEFINE_int32(base, 1, "N_base: base x factor");
@@ -105,16 +105,20 @@ int main(int argc, char* argv[]) {
   /// dimension of the attribute
   const int DBA = 16;
   /// dimension of the qurey attribute
-  const int DA = 2;
+  const int DA = 1;
   /// distance measure (Euclidean or Cosine)
   const DistanceMeasure measure = Euclidean;
   //
   // search-graph configuration
   //
-  /// number of neighbors per point in the graph
-  const int KBuild = 24;
+  /// number of neighbors per point in the global graph
+  const int KBuild = 12;
   /// maximum number of inverse/symmetric links (KBuild / 2 usually works best)
   const int KF = KBuild / 2;
+  /// number of neighbors per point in the local graph
+  const int KBuild_ = 12;
+  /// maximum number of inverse/symmetric links (KBuild / 2 usually works best)
+  const int KF_ = KBuild_ / 2;
   /// segment/batch size (needs to be > KBuild-KF)
   const int S = 32;
   /// graph height / number of layers (4 usually performs best)
@@ -158,20 +162,29 @@ int main(int argc, char* argv[]) {
   const size_t N_base = FLAGS_base * FLAGS_factor;
   const int N_shard = FLAGS_shard * FLAGS_factor;
 
-  typedef GGNNMultiGPU<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, DA, KBuild,
-                       KF, KQuery, S>
+  std::string base_attr_filename = FLAGS_base_attr_filename + 
+              "label_deep_base_value_" + std::to_string(DBA) + ".txt";
+  std::string query_attr_filename = FLAGS_query_attr_filename + 
+              "label_deep_query_value_" + std::to_string(DBA) + "_labeldim_" + std::to_string(DA) + ".txt";
+  std::string groundtruth_filename = FLAGS_groundtruth_filename + 
+              "deep_groundtruth_label_value_" + std::to_string(DBA) + "_labeldim_" + std::to_string(DA) + ".bin";
+  std::string graph_dir = FLAGS_graph_dir + 
+              "deep1m_" + std::to_string(DBA) + "/";
+
+  typedef GGNNMultiGPU<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, DBA, DA, KBuild,
+                       KF, KBuild_, KF_, KQuery, S>
       GGNN;
   GGNN ggnn{
       FLAGS_base_filename,
       FLAGS_query_filename,
-      FLAGS_base_attr_filename,
-      FLAGS_query_attr_filename,
-      file_exists(FLAGS_groundtruth_filename) ? FLAGS_groundtruth_filename : "",
+      base_attr_filename,
+      query_attr_filename,
+      file_exists(groundtruth_filename) ? groundtruth_filename : "",
       L,
       static_cast<float>(FLAGS_tau),
       N_base};
 
-  ggnn.ggnnMain(gpus, FLAGS_mode, N_shard, FLAGS_graph_dir,
+  ggnn.ggnnMain(gpus, FLAGS_mode, N_shard, graph_dir,
                 FLAGS_refinement_iterations, FLAGS_grid_search);
 
   printf("done! \n");

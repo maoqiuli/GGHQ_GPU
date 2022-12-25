@@ -72,11 +72,12 @@ size_t getTotalSystemMemory()
  */
 template <DistanceMeasure measure,
           typename KeyT, typename ValueT, typename GAddrT, typename BaseT,
-          typename BAddrT, int D, int DA, int KBuild, int KF, int KQuery, int S>
+          typename BAddrT, int D, int DBA, int DA, int KBuild, int KF, int KBuild_, int KF_, int KQuery, int S>
 struct GGNNMultiGPU {
 
   using Dataset = Dataset<KeyT, BaseT, BAddrT>;
-  using GGNNGPUInstance = GGNNGPUInstance<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, DA, KBuild, KF, KQuery, S>;
+  using GGNNGPUInstanceG = GGNNGPUInstance<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, DBA, DA, KBuild, KF, KBuild_, KF_, KQuery, S>;
+  using GGNNGPUInstanceL = GGNNGPUInstance<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, DBA, DA, KBuild_, KF_, 0, 0, KQuery, S>;
   using GGNNResults = GGNNResults<measure, KeyT, ValueT, BaseT, BAddrT, KQuery>;
 
   Dataset dataset;
@@ -84,13 +85,10 @@ struct GGNNMultiGPU {
   std::vector<std::vector<int>> buckets;
   std::vector<int> bucket_size;
   std::vector<Dataset *> datasets;
-  char* sub_memory;
-  KeyT* sub_graph;
-  KeyT* sub_graph_top;
 
   /// one instance per GPU
-  std::vector<GGNNGPUInstance> ggnn_gpu_instances;
-  GGNNGPUInstance* ggnn_gpu_sub_instances;
+  std::vector<GGNNGPUInstanceG> ggnn_gpu_instances;
+  GGNNGPUInstanceL* ggnn_gpu_sub_instances;
 
   std::vector<std::tuple<float, float, float, float>> result_vector;
 
@@ -303,38 +301,30 @@ struct GGNNMultiGPU {
     
     if (enable_construction)
     {
-      for (size_t i = 0; i < 16; i++) {
+      for (size_t i = 0; i < DBA; i++) {
         std::vector<int> bucket;
         buckets.push_back(bucket);
       }
       for (size_t i = 0; i < dataset.N_base; i++) {
         buckets[dataset.h_base_attr[i]].push_back(i);
       }
-      for (size_t i = 0; i < 16; i++) {
+      for (size_t i = 0; i < DBA; i++) {
         bucket_size.push_back(buckets[i].size());
       }
 
-      for (size_t i = 0; i < 16; i++) {
+      for (size_t i = 0; i < DBA; i++) {
         Dataset* subdataset = new Dataset("basePath", "queryPath", "baseAttrPath", "queryAttrPath", "gtPath", 0, true);
         subdataset->load_datasets(bucket_size[i], dataset.D, dataset.h_base, buckets[i]);
         datasets.push_back(subdataset);
       }
-      
-      const size_t sub_graph_size = (dataset.N_base * KBuild * sizeof(KeyT));
-      const size_t sub_graph_top_size = (16 * 32 * sizeof(KeyT));
-      CHECK_CUDA(cudaMallocHost(&sub_memory, sub_graph_size + sub_graph_top_size));
-      size_t pos = 0;
-      sub_graph = reinterpret_cast<KeyT*>(sub_memory+pos);
-      pos += sub_graph_size;
-      sub_graph_top = reinterpret_cast<KeyT*>(sub_memory+pos);
+
     }
   }
 
   void free_datasets() {
-    for (size_t i = 0; i < 16; i++) {
+    for (size_t i = 0; i < DBA; i++) {
       delete datasets[i];
     }
-    cudaFreeHost(sub_memory);
   }
 
   void build(const int refinement_iterations) {
@@ -444,7 +434,7 @@ struct GGNNMultiGPU {
   }
 
   void build_sub(const int refinement_iterations) {
-    for (size_t i = 0; i < 16; i++) {
+    for (size_t i = 0; i < DBA; i++) {
       const int gpu_id = gpu_ids[0];
       const int num_gpus = gpu_ids.size();
       const int N_shard = datasets[i]->N_base/num_gpus;
@@ -467,7 +457,7 @@ struct GGNNMultiGPU {
       CHECK_GT(max_parts_per_gpu, 0) << "use smaller shards.";
 
       const int num_cpu_buffers_per_gpu = min(num_iterations, max_parts_per_gpu);
-      ggnn_gpu_sub_instances = new GGNNGPUInstance(gpu_id, datasets[i], bucket_size[i], L, true, tau_build, num_iterations, num_cpu_buffers_per_gpu);
+      ggnn_gpu_sub_instances = new GGNNGPUInstanceL(gpu_id, datasets[i], bucket_size[i], L, true, tau_build, num_iterations, num_cpu_buffers_per_gpu);
       ggnn_gpu_sub_instances->loadShardBaseDataAsync(0, 0);
       ggnn_gpu_sub_instances->build(0, 0);
       for (int refinement_step = 0; refinement_step < refinement_iterations; ++refinement_step) {
@@ -475,18 +465,19 @@ struct GGNNMultiGPU {
         ggnn_gpu_sub_instances->refine(0, 0);
       }
       ggnn_gpu_sub_instances->downloadAsync(0, 0);
-      KeyT* h_graph_s = ggnn_gpu_sub_instances->ggnn_cpu_buffers[0].h_graph;
-      KeyT* h_graph_d = ggnn_gpu_instances[0].ggnn_cpu_buffers[0].h_graph;
-      KeyT* h_graph_top_d = h_graph_d + dataset.N_base * KBuild * 2;
       size_t Nsub = ggnn_gpu_sub_instances->N_shard;
       size_t Ksub = KBuild;
+      size_t Ksub_ = KBuild_;
+      KeyT* h_graph_s = ggnn_gpu_sub_instances->ggnn_cpu_buffers[0].h_graph;
+      KeyT* h_graph_d = ggnn_gpu_instances[0].ggnn_cpu_buffers[0].h_graph;
+      KeyT* h_graph_top_d = h_graph_d + dataset.N_base * (Ksub + Ksub_);
 #pragma omp parallel for
       for (size_t j=0; j<Nsub; j++) {
-        for (size_t k=0; k<Ksub; k++) {
-          h_graph_d[(2 * buckets[i][j] + 1) * Ksub + k] = buckets[i][h_graph_s[j * Ksub + k]];
+        for (size_t k=0; k<Ksub_; k++) {
+          h_graph_d[(Ksub + Ksub_) * buckets[i][j] + Ksub + k] = buckets[i][h_graph_s[j * Ksub_ + k]];
         }
       }
-      memcpy(h_graph_top_d + static_cast<KeyT>(i * 32), &buckets[i][0], 32 * sizeof(KeyT));
+      memcpy(h_graph_top_d + static_cast<KeyT>(i * S), &buckets[i][0], S * sizeof(KeyT));
       delete ggnn_gpu_sub_instances;
     }
   }

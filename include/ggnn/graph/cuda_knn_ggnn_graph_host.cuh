@@ -54,7 +54,8 @@ struct GGNNGraphHost {
   /// combined memory pool
   char* h_memory;
 
-  size_t graph_size;
+  size_t graph_g_size;
+  size_t graph_l_size;
   size_t selection_translation_size;
   size_t nn1_stats_size;
   size_t total_graph_size;
@@ -65,17 +66,19 @@ struct GGNNGraphHost {
 
   size_t N;
   size_t K;
+  size_t K_;
 
-  GGNNGraphHost(const int n, const int k, const int N_all, const int ST_all) :
-    N{static_cast<size_t>(n)}, K{static_cast<size_t>(k)} 
+  GGNNGraphHost(const int n, const int k, const int k_, const int N_all, const int ST_all) :
+    N{static_cast<size_t>(n)}, K{static_cast<size_t>(k)}, K_{static_cast<size_t>(k_)} 
   {
     // just to make sure that everything is sufficiently aligned
     auto align8 = [](size_t size) -> size_t {return ((size+7)/8)*8;};
 
-    graph_size = align8(static_cast<size_t>(N_all) * K * sizeof(KeyT));
+    graph_g_size = align8(static_cast<size_t>(N_all) * K * sizeof(KeyT));
+    graph_l_size = align8(static_cast<size_t>(N_all) * K_ * sizeof(KeyT));
     selection_translation_size = align8(ST_all * sizeof(KeyT));
     nn1_stats_size = align8(2 * sizeof(ValueT));
-    total_graph_size = 2 * graph_size + 2 * selection_translation_size + nn1_stats_size;
+    total_graph_size = graph_g_size + graph_l_size + 2 * selection_translation_size + nn1_stats_size;
 
     VLOG(1) << "GGNNGraphHost(): N: " << N << ", K: " << K
             << ", N_all: " << N_all << ", ST_all: " << ST_all
@@ -85,9 +88,9 @@ struct GGNNGraphHost {
 
     size_t pos = 0;
     h_graph = reinterpret_cast<KeyT*>(h_memory+pos);
-    pos += graph_size;
+    pos += graph_g_size;
     h_graph_half = reinterpret_cast<KeyT*>(h_memory+pos);
-    pos += graph_size;
+    pos += graph_l_size;
     h_translation = reinterpret_cast<KeyT*>(h_memory+pos);
     pos += selection_translation_size;
     h_selection = reinterpret_cast<KeyT*>(h_memory+pos);
@@ -119,7 +122,7 @@ struct GGNNGraphHost {
 
   void datamove() {
     for (size_t i=0; i<N; i++) {
-      memcpy(h_graph + static_cast<KeyT>(2 * (N - 1 - i) * K), h_graph + static_cast<KeyT>((N - 1 - i) * K), K * sizeof(KeyT));
+      memcpy(h_graph + static_cast<KeyT>((N - 1 - i) * (K + K_)), h_graph + static_cast<KeyT>((N - 1 - i) * K), K * sizeof(KeyT));
     }
   }
 
