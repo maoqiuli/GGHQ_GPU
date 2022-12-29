@@ -339,7 +339,7 @@ struct SimpleKNNCache {
     __syncthreads();
   }
 
-  __device__ __forceinline__ void fetch(KeyT* s_keys, int* s_atts, int* query_attr, const KeyT* d_translation,
+  __device__ __forceinline__ void fetch(KeyT* s_keys, int* s_atts, bool* attr_lut, const KeyT* d_translation,
                                         int len) {
     __syncthreads();
     clc_re_start = clock();
@@ -357,25 +357,14 @@ struct SimpleKNNCache {
     clc_re_end = clock();
     clc_re += (int)(clc_re_end - clc_re_start);
 
-    __shared__ bool attrs_are_same;
     for (int k = 0; k < len; k++) {
       __syncthreads();
       clc_filter_start = clock();
       const KeyT other_n = s_keys[k];
       const int other_att = s_atts[k];
       if (other_n == EMPTY_KEY) continue;
-      if (!threadIdx.x) {
-        attrs_are_same = false;
-      }
-      __syncthreads(); 
-      for (int item = 0; item < ATTRS_PER_THREAD; ++item) {
-        const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
-        if (read_dim < DA) {
-          if (query_attr[item] == other_att) {
-            attrs_are_same = true;
-          }
-        }
-      }
+
+      const bool attrs_are_same = attr_lut[other_att];
       __syncthreads(); 
       clc_filter_end = clock();
       clc_filter += (int)(clc_filter_end - clc_filter_start);
