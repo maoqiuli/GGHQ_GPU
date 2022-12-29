@@ -67,9 +67,11 @@ struct SimpleKNNCache {
   // KeyT* s_cache1;
   // ValueT* s_dists1;
 
+  clock_t clc_filter_start, clc_filter_end;
   clock_t clc_dist_start, clc_dist_end;
   clock_t clc_push_start, clc_push_end;
   clock_t clc_re_start, clc_re_end;
+  int clc_filter = 0;
   int clc_dist = 0;
   int clc_push = 0;
   int clc_re = 0;
@@ -358,6 +360,7 @@ struct SimpleKNNCache {
     __shared__ bool attrs_are_same;
     for (int k = 0; k < len; k++) {
       __syncthreads();
+      clc_filter_start = clock();
       const KeyT other_n = s_keys[k];
       const int other_att = s_atts[k];
       if (other_n == EMPTY_KEY) continue;
@@ -374,21 +377,25 @@ struct SimpleKNNCache {
         }
       }
       __syncthreads(); 
+      clc_filter_end = clock();
+      clc_filter += (int)(clc_filter_end - clc_filter_start);
+
       if (!attrs_are_same) continue;
+
       clc_dist_start = clock();
       const ValueT dist = rs_dist_calc.distance_synced(other_n);
       num_dist += 1;
       clc_dist_end = clock();
       clc_dist += (int)(clc_dist_end - clc_dist_start);
 
+      clc_push_start = clock();
       if (criteria(dist)) {
-        clc_push_start = clock();
         push(other_n, dist);
         __syncthreads();
-        clc_push_end = clock();
-        clc_push += (int)(clc_push_end - clc_push_start);
       }
-
+      clc_push_end = clock();
+      clc_push += (int)(clc_push_end - clc_push_start);
+      
     }
     __syncthreads();
   }

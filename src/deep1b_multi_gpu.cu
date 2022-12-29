@@ -43,8 +43,8 @@ inline bool file_exists(const std::string& name) {
 DEFINE_string(
     mode, "bq",
     "Mode: bq -> build_and_query, bs -> build_and_store, lq -> load_and_query");
-DEFINE_string(base_filename, "/home/maoqiuli21/nfs/data/deep/deep1m/base.1m.fbin", "path to file with base vectors");
-DEFINE_string(query_filename, "/home/maoqiuli21/nfs/data/deep/query.public.10K.fbin", "path to file with perform_query vectors");
+DEFINE_string(base_filename, "/home/maoqiuli21/nfs/data/deep/", "path to file with base vectors");
+DEFINE_string(query_filename, "/home/maoqiuli21/nfs/data/deep/", "path to file with perform_query vectors");
 DEFINE_string(base_attr_filename, "/home/maoqiuli21/nfs/data/label/", "path to file with base attributes");
 DEFINE_string(query_attr_filename, "/home/maoqiuli21/nfs/data/label/", "path to file with query attributes");
 DEFINE_string(groundtruth_filename, "/home/maoqiuli21/nfs/data/label/", "path to file with groundtruth");
@@ -72,10 +72,10 @@ int main(int argc, char* argv[]) {
   google::ParseCommandLineFlags(&argc, &argv, true);
 
   LOG(INFO) << "Reading files";
-  CHECK(file_exists(FLAGS_base_filename))
-      << "File for base vectors has to exist";
-  CHECK(file_exists(FLAGS_query_filename))
-      << "File for perform_query vectors has to exist";
+  // CHECK(file_exists(FLAGS_base_filename))
+  //     << "File for base vectors has to exist";
+  // CHECK(file_exists(FLAGS_query_filename))
+  //     << "File for perform_query vectors has to exist";
 
   CHECK_GE(FLAGS_tau, 0) << "Tau has to be bigger or equal 0.";
   CHECK_GE(FLAGS_refinement_iterations, 0)
@@ -162,21 +162,26 @@ int main(int argc, char* argv[]) {
   const size_t N_base = FLAGS_base * FLAGS_factor;
   const int N_shard = FLAGS_shard * FLAGS_factor;
 
+  std::string base = (FLAGS_base == 1)?"":std::to_string(FLAGS_base);
+  std::string base_filename = FLAGS_base_filename + 
+              "deep" + std::to_string(FLAGS_base) + "m/base." + std::to_string(FLAGS_base) + "m.fbin";
+  std::string query_filename = FLAGS_query_filename + 
+              "query.public.10K.fbin";
   std::string base_attr_filename = FLAGS_base_attr_filename + 
-              "label_deep_base_value_" + std::to_string(DBA) + ".txt";
+              "label_deep" + base + "_base_value_" + std::to_string(DBA) + ".txt";
   std::string query_attr_filename = FLAGS_query_attr_filename + 
-              "label_deep_query_value_" + std::to_string(DBA) + "_labeldim_" + std::to_string(DA) + ".txt";
+              "label_deep" + base + "_query_value_" + std::to_string(DBA) + "_labeldim_" + std::to_string(DA) + ".txt";
   std::string groundtruth_filename = FLAGS_groundtruth_filename + 
-              "deep_groundtruth_label_value_" + std::to_string(DBA) + "_labeldim_" + std::to_string(DA) + ".bin";
+              "deep" + base + "_groundtruth_label_value_" + std::to_string(DBA) + "_labeldim_" + std::to_string(DA) + ".bin";
   std::string graph_dir = FLAGS_graph_dir + 
-              "deep1m_" + std::to_string(DBA) + "/";
+              "deep" + std::to_string(FLAGS_base) + "m_" + std::to_string(DBA) + "/";
 
   typedef GGNNMultiGPU<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, DBA, DA, KBuild,
                        KF, KBuild_, KF_, KQuery, S>
       GGNN;
   GGNN ggnn{
-      FLAGS_base_filename,
-      FLAGS_query_filename,
+      base_filename,
+      query_filename,
       base_attr_filename,
       query_attr_filename,
       file_exists(groundtruth_filename) ? groundtruth_filename : "",

@@ -74,8 +74,10 @@ struct QueryKernel {
     for (int blockid = blockIdx.x; blockid < N; blockid += gridDim.x) {
       clock_t clc_kernel_start, clc_kernel_end;
       clock_t clc_fetch_start, clc_fetch_end;
+      clock_t clc_nlist_start, clc_nlist_end;
       int clc_kernel = 0;
       int clc_fetch = 0;
+      int clc_nlist = 0;
       clc_kernel_start = clock();
 
       const int ATTRS_SIZE = ceil(log2(DBA));
@@ -136,6 +138,7 @@ struct QueryKernel {
         }
         __syncthreads();
 
+        clc_nlist_start = clock();
         unsigned shift = (ATTRS_PER_INT - 1 - anchor % ATTRS_PER_INT) * ATTRS_SIZE;
         unsigned mask = pow(2, ATTRS_SIZE)-1;
         for (int i = 0; i < ITERATIONS_FOR_K; ++i) {
@@ -148,6 +151,8 @@ struct QueryKernel {
           // if (k < K) s_att[k] = *(d_base_attr + static_cast<BAddrT>(s_knn[k]));
         }
         __syncthreads();
+        clc_nlist_end = clock();
+        clc_nlist += (int)(clc_nlist_end - clc_nlist_start);
         
         clc_fetch_start = clock();
         cache.fetch(s_knn, s_att, r_query_attr, nullptr, K);
@@ -174,7 +179,8 @@ struct QueryKernel {
 
       clc_kernel_end = clock();
       clc_kernel = (int)(clc_kernel_end - clc_kernel_start);
-      // if (!blockIdx.x && !threadIdx.x) printf("c_tau_query > %f    %d    %d    %d    %d\n", c_tau_query, clc_kernel, clc_fetch, cache.clc_dist, cache.clc_push);
+      // if (!blockIdx.x && !threadIdx.x) printf("c_tau_query > %f    %d    %d    %d    %d    %d    %d    %d\n", 
+      //                                         c_tau_query, clc_kernel, clc_nlist, clc_fetch, cache.clc_re, cache.clc_filter, cache.clc_dist, cache.clc_push);
       num_dist += cache.num_dist;
     }
     // if (!blockIdx.x && !threadIdx.x) printf("number of distance: %d\n", num_dist / 10000); 
