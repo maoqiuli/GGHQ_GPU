@@ -103,9 +103,9 @@ int main(int argc, char* argv[]) {
   /// dimension of the vector
   const int D = 96;
   /// dimension of the attribute
-  const int DBA = 16;
+  const int DBA = 1024;
   /// dimension of the qurey attribute
-  const int DA = 1;
+  const int DA = 512;
   /// distance measure (Euclidean or Cosine)
   const DistanceMeasure measure = Euclidean;
   const int DistPar = 4;

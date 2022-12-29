@@ -53,6 +53,7 @@ struct QueryKernel {
   static constexpr int ITERATIONS_FOR_KS = (KS + BLOCK_DIM_X - 1) / BLOCK_DIM_X;
 
   static constexpr int ATTRS_PER_THREAD = (DA - 1) / BLOCK_DIM_X + 1;
+  static constexpr int AINIT_PER_THREAD = (DBA - 1) / BLOCK_DIM_X + 1;
 
   typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, DA, BLOCK_DIM_X, DIST_PAR_NUM,
                          VISITED_SIZE, PRIOQ_SIZE, BEST_SIZE, BaseT, BAddrT,
@@ -92,11 +93,18 @@ struct QueryKernel {
       Cache cache(d_base, d_query, n, xi);
       __syncthreads();
 
-      int r_query_attr[ATTRS_PER_THREAD];
+      __shared__ bool lut[DBA];
+      for (int item = 0; item < AINIT_PER_THREAD; ++item) {
+        const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
+        if (read_dim < DBA) {
+          lut[read_dim] = false;
+        }
+      }
+      __syncthreads();
       for (int item = 0; item < ATTRS_PER_THREAD; ++item) {
         const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
         if (read_dim < DA) {
-          r_query_attr[item] = *(d_query_attr + n*DA + read_dim);
+          lut[*(d_query_attr + n*DA + read_dim)] = true;
         }
       }
       __syncthreads();
@@ -117,7 +125,7 @@ struct QueryKernel {
       __syncthreads();
 
       clc_fetch_start = clock();
-      cache.fetch(s_knn, s_att, r_query_attr, nullptr, S);
+      cache.fetch(s_knn, s_att, lut, nullptr, S);
       __syncthreads();
       clc_fetch_end = clock();
       clc_fetch += (int)(clc_fetch_end - clc_fetch_start);
@@ -154,7 +162,7 @@ struct QueryKernel {
         clc_nlist += (int)(clc_nlist_end - clc_nlist_start);
         
         clc_fetch_start = clock();
-        cache.fetch(s_knn, s_att, r_query_attr, nullptr, K);
+        cache.fetch(s_knn, s_att, lut, nullptr, K);
         clc_fetch_end = clock();
         clc_fetch += (int)(clc_fetch_end - clc_fetch_start);
       }  // end iterations
