@@ -69,8 +69,8 @@ __global__ void divide(ValueT* res, ValueT* input, ValueT N) {
  * @param S segment size
  */
 template <DistanceMeasure measure,
-          typename KeyT, typename ValueT, typename GAddrT, typename BaseT,
-          typename BAddrT, int D, int DBA, int DA, int KBuild, int KF, int KBuild_, int KF_, int KQuery, int S>
+          typename KeyT, typename ValueT, typename GAddrT, typename BaseT, typename BAddrT, int DIST_PAR_NUM, 
+          int D, int DBA, int DA, int KBuild, int KF, int KBuild_, int KF_, int KQuery, int S>
 struct GGNNGPUInstance {
   /// number of base points per shard
   int N_shard;
@@ -560,7 +560,7 @@ struct GGNNGPUInstance {
     CHECK_CUDA(cudaSetDevice(gpu_id));
     const auto& shard = ggnn_shards.at(shard_id%ggnn_shards.size());
 
-    typedef QueryKernel<measure, ValueT, KeyT, D, DBA, DA, KBuild + KBuild_, KF + KF_, KQuery, S, BLOCK_DIM_X, BaseT,
+    typedef QueryKernel<measure, ValueT, KeyT, D, DBA, DA, KBuild + KBuild_, KF + KF_, KQuery, S, BLOCK_DIM_X, DIST_PAR_NUM, BaseT,
                         BAddrT, GAddrT, DIST_STATS, false, MAX_ITERATIONS, CACHE_SIZE, SORTED_SIZE, true>
         QueryKernel;
 
@@ -638,7 +638,7 @@ struct GGNNGPUInstance {
     CHECK_CUDA(cudaSetDevice(gpu_id));
     const auto& shard = ggnn_shards.at(shard_id%ggnn_shards.size());
 
-    typedef TopMergeKernel<measure, ValueT, KeyT, D, KBuild, 128, BaseT, BAddrT, GAddrT>
+    typedef TopMergeKernel<measure, ValueT, KeyT, D, KBuild, 128, 1, BaseT, BAddrT, GAddrT>
         TopMergeKernel;
 
     TopMergeKernel top_kernel;
@@ -663,7 +663,7 @@ struct GGNNGPUInstance {
     CHECK_CUDA(cudaSetDevice(gpu_id));
     const auto& shard = ggnn_shards.at(shard_id%ggnn_shards.size());
 
-    typedef MergeKernel<measure, ValueT, KeyT, D, KBuild, KF, S, 32, BaseT, BAddrT,
+    typedef MergeKernel<measure, ValueT, KeyT, D, KBuild, KF, S, 32, 1, BaseT, BAddrT,
                         GAddrT>
         MergeKernel;
 

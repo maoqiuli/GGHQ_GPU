@@ -49,7 +49,7 @@ struct StatsQueryKernel {
   static constexpr int VISITED_SIZE = CACHE_SIZE - SORTED_SIZE;
   static constexpr int PRIOQ_SIZE = SORTED_SIZE - BEST_SIZE;
 
-  typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, DA, BLOCK_DIM_X, VISITED_SIZE,
+  typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, DA, BLOCK_DIM_X, 1, VISITED_SIZE,
                             PRIOQ_SIZE, BEST_SIZE, BaseT, BAddrT, DIST_STATS,
                             OVERFLOW_STATS>
       Cache;

@@ -71,13 +71,13 @@ size_t getTotalSystemMemory()
  * @param S segment size
  */
 template <DistanceMeasure measure,
-          typename KeyT, typename ValueT, typename GAddrT, typename BaseT,
-          typename BAddrT, int D, int DBA, int DA, int KBuild, int KF, int KBuild_, int KF_, int KQuery, int S>
+          typename KeyT, typename ValueT, typename GAddrT, typename BaseT, typename BAddrT, int DIST_PAR_NUM, 
+          int D, int DBA, int DA, int KBuild, int KF, int KBuild_, int KF_, int KQuery, int S>
 struct GGNNMultiGPU {
 
   using Dataset = Dataset<KeyT, BaseT, BAddrT>;
-  using GGNNGPUInstanceG = GGNNGPUInstance<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, DBA, DA, KBuild, KF, KBuild_, KF_, KQuery, S>;
-  using GGNNGPUInstanceL = GGNNGPUInstance<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, DBA, DA, KBuild_, KF_, 0, 0, KQuery, S>;
+  using GGNNGPUInstanceG = GGNNGPUInstance<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, DIST_PAR_NUM, D, DBA, DA, KBuild, KF, KBuild_, KF_, KQuery, S>;
+  using GGNNGPUInstanceL = GGNNGPUInstance<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, DIST_PAR_NUM, D, DBA, DA, KBuild_, KF_, 0, 0, KQuery, S>;
   using GGNNResults = GGNNResults<measure, KeyT, ValueT, BaseT, BAddrT, KQuery>;
 
   Dataset dataset;

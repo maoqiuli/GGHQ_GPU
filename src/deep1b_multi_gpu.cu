@@ -108,6 +108,7 @@ int main(int argc, char* argv[]) {
   const int DA = 1;
   /// distance measure (Euclidean or Cosine)
   const DistanceMeasure measure = Euclidean;
+  const int DistPar = 4;
   //
   // search-graph configuration
   //
@@ -176,7 +177,7 @@ int main(int argc, char* argv[]) {
   std::string graph_dir = FLAGS_graph_dir + 
               "deep" + std::to_string(FLAGS_base) + "m_" + std::to_string(DBA) + "/";
 
-  typedef GGNNMultiGPU<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, DBA, DA, KBuild,
+  typedef GGNNMultiGPU<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, DistPar, D, DBA, DA, KBuild,
                        KF, KBuild_, KF_, KQuery, S>
       GGNN;
   GGNN ggnn{

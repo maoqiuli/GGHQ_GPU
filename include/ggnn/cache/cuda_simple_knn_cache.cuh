@@ -27,7 +27,7 @@ limitations under the License.
 #include "ggnn/utils/cuda_knn_utils.cuh"
 
 template <DistanceMeasure measure,
-          typename ValueT, typename KeyT, int KQuery, int D, int DA, int BLOCK_DIM_X,
+          typename ValueT, typename KeyT, int KQuery, int D, int DA, int BLOCK_DIM_X, int DIST_PAR_NUM,
           int VISITED_SIZE = 256, int PRIOQ_SIZE = 128, int BEST_SIZE = 32,
           typename BaseT = ValueT, typename BAddrT = KeyT,
           bool DIST_STATS = false, bool OVERFLOW_STATS = false>
@@ -54,7 +54,7 @@ struct SimpleKNNCache {
 
   static constexpr int ATTRS_PER_THREAD = (DA - 1) / BLOCK_DIM_X + 1;
 
-  typedef Distance<measure, ValueT, KeyT, D, DA, BLOCK_DIM_X, BaseT, BAddrT> Distance;
+  typedef Distance<measure, ValueT, KeyT, D, DA, BLOCK_DIM_X, DIST_PAR_NUM, BaseT, BAddrT> Distance;
 
   union SyncTempStorage {
     KeyT cache;
@@ -100,12 +100,6 @@ struct SimpleKNNCache {
 
     s_cache = reinterpret_cast<KeyT*>(s_cache_tmp);
     s_dists = reinterpret_cast<ValueT*>(s_dists_tmp);
-
-    // __shared__ KeyT s_cache_tmp1[CACHE_SIZE];
-    // __shared__ ValueT s_dists_tmp1[SORTED_SIZE];
-
-    // s_cache1 = reinterpret_cast<KeyT*>(s_cache_tmp1);
-    // s_dists1 = reinterpret_cast<ValueT*>(s_dists_tmp1);
   }
 
   __device__ __forceinline__ SyncTempStorage& SyncPrivateTmpStorage() {
@@ -131,11 +125,9 @@ struct SimpleKNNCache {
   __device__ __forceinline__ void init() {
     for (int i = threadIdx.x; i < CACHE_SIZE; i += BLOCK_DIM_X) {
       s_cache[i] = EMPTY_KEY;
-      // s_cache1[i] = EMPTY_KEY;
     }
     for (int i = threadIdx.x; i < SORTED_SIZE; i += BLOCK_DIM_X) {
       s_dists[i] = EMPTY_DIST;
-      // s_dists1[i] = EMPTY_DIST;
     }
     if (DIST_STATS && !threadIdx.x) dist_calc_counter = 0;
     if (OVERFLOW_STATS && !threadIdx.x) s_overflow_counter = 0;
@@ -358,40 +350,59 @@ struct SimpleKNNCache {
     clc_re += (int)(clc_re_end - clc_re_start);
 
     __shared__ bool attrs_are_same;
-    for (int k = 0; k < len; k++) {
+    KeyT other_n[DIST_PAR_NUM];
+    int other_att[DIST_PAR_NUM];
+    int len_dist;
+    __shared__ ValueT dist[DIST_PAR_NUM];
+    for (int k = 0; k < len;) {
+      len_dist = 0;
       __syncthreads();
+
       clc_filter_start = clock();
-      const KeyT other_n = s_keys[k];
-      const int other_att = s_atts[k];
-      if (other_n == EMPTY_KEY) continue;
-      if (!threadIdx.x) {
-        attrs_are_same = false;
-      }
-      __syncthreads(); 
-      for (int item = 0; item < ATTRS_PER_THREAD; ++item) {
-        const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
-        if (read_dim < DA) {
-          if (query_attr[item] == other_att) {
-            attrs_are_same = true;
+      for (; k < len && len_dist < DIST_PAR_NUM; k++) {
+        other_n[len_dist] = s_keys[k];
+        other_att[len_dist] = s_atts[k];
+        if (other_n[len_dist] == EMPTY_KEY) continue;
+        if (!threadIdx.x) {
+          attrs_are_same = false;
+        }
+        __syncthreads(); 
+        for (int item = 0; item < ATTRS_PER_THREAD; ++item) {
+          const int read_dim = item * BLOCK_DIM_X + threadIdx.x;
+          if (read_dim < DA) {
+            if (query_attr[item] == other_att[len_dist]) {
+              attrs_are_same = true;
+            }
           }
         }
+        __syncthreads(); 
+        if (!attrs_are_same) continue;
+        len_dist++;
       }
-      __syncthreads(); 
       clc_filter_end = clock();
       clc_filter += (int)(clc_filter_end - clc_filter_start);
 
-      if (!attrs_are_same) continue;
+      if (!len_dist) continue;
 
       clc_dist_start = clock();
-      const ValueT dist = rs_dist_calc.distance_synced(other_n);
+      if (len_dist < DIST_PAR_NUM / 2 + 1) {
+        for (int i = 0; i < len_dist; i++) {
+          rs_dist_calc.distance_synced(other_n[i], dist + i);
+        }
+      }
+      else {
+        rs_dist_calc.distance_synced(other_n, len_dist, dist);
+      }
       num_dist += 1;
       clc_dist_end = clock();
       clc_dist += (int)(clc_dist_end - clc_dist_start);
 
       clc_push_start = clock();
-      if (criteria(dist)) {
-        push(other_n, dist);
-        __syncthreads();
+      for (int i = 0; i < len_dist; i++){
+        if (criteria(dist[i])) {
+          push(other_n[i], dist[i]);
+          __syncthreads();
+        }
       }
       clc_push_end = clock();
       clc_push += (int)(clc_push_end - clc_push_start);

@@ -35,7 +35,7 @@ top(const T kernel) {
 }
 
 template <DistanceMeasure measure,
-          typename ValueT, typename KeyT, int D, int K, int BLOCK_DIM_X,
+          typename ValueT, typename KeyT, int D, int K, int BLOCK_DIM_X, int DIST_PAR_NUM,
           typename BaseT = ValueT, typename BAddrT = int32_t,
           typename GAddrT = int32_t>
 struct TopMergeKernel {
@@ -59,7 +59,7 @@ struct TopMergeKernel {
     int clc_push = 0;
     clc_kernel_start = clock();
 
-    typedef Distance<measure, ValueT, KeyT, D, 1, BLOCK_DIM_X, BaseT, BAddrT> Distance;
+    typedef Distance<measure, ValueT, KeyT, D, 1, BLOCK_DIM_X, DIST_PAR_NUM, BaseT, BAddrT> Distance;
     typedef KBestList<ValueT, KeyT, K, BLOCK_DIM_X> KBestList;
 
     const int n = N_offset + blockIdx.x;
@@ -77,19 +77,26 @@ struct TopMergeKernel {
             : S_plus_offset + ((n - S_plus_offset) / S_actual) * S_actual;
     const int end = start + S_actual;
 
-    for (int other_n = start; other_n < end; other_n++) {
+    int other_n[DIST_PAR_NUM], other_m[DIST_PAR_NUM], len_dist;
+    for (int k = start; k < end;) {
+      len_dist = 0;
       __syncthreads();
-      const int other_m = (layer) ? d_translation[other_n] : other_n;
+      for (; k < end && len_dist < DIST_PAR_NUM;) {
+        other_n[len_dist] = k;
+        other_m[len_dist] = (layer) ? d_translation[other_n[len_dist]] : other_n[len_dist];
+        if (m != other_m[len_dist]) {
+          len_dist++;
+        }
+        k++;
+      }
 
-      if (m == other_m) continue;
-      clc_dist_start = clock();
-      ValueT dist = distCalc.distance_synced(other_m);
-      clc_dist_end = clock();
-      clc_dist += (int)(clc_dist_end - clc_dist_start);
-      clc_push_start = clock();
-      best.add_unique(dist, other_n);
-      clc_push_end = clock();
-      clc_push += (int)(clc_push_end - clc_push_start);
+      __shared__ ValueT dist[DIST_PAR_NUM];
+      if (len_dist) distCalc.distance_synced(other_m, len_dist, dist);
+
+      for (int i = 0; i < len_dist; i++){
+        best.add_unique(dist[i], other_n[i]);
+        __syncthreads();
+      }
     }
 
     for (int i=0; i < ITERATIONS_FOR_K; ++i) {

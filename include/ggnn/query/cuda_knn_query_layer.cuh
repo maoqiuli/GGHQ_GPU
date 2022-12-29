@@ -35,7 +35,7 @@ __global__ void query(const T kernel) {
 }
 
 template <DistanceMeasure measure, typename ValueT, typename KeyT, int D, int DBA, int DA, int K,
-          int KF, int KQuery, int S, int BLOCK_DIM_X, typename BaseT = ValueT,
+          int KF, int KQuery, int S, int BLOCK_DIM_X, int DIST_PAR_NUM, typename BaseT = ValueT,
           typename BAddrT = KeyT, typename GAddrT = KeyT,
           bool DIST_STATS = false, bool OVERFLOW_STATS = false,
           int MAX_ITERATIONS = 400, int CACHE_SIZE = 512, int SORTED_SIZE = 256,
@@ -54,7 +54,7 @@ struct QueryKernel {
 
   static constexpr int ATTRS_PER_THREAD = (DA - 1) / BLOCK_DIM_X + 1;
 
-  typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, DA, BLOCK_DIM_X,
+  typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, DA, BLOCK_DIM_X, DIST_PAR_NUM,
                          VISITED_SIZE, PRIOQ_SIZE, BEST_SIZE, BaseT, BAddrT,
                          DIST_STATS, OVERFLOW_STATS>
       Cache;
@@ -131,7 +131,6 @@ struct QueryKernel {
         } else if (measure == Cosine) {
           cache.xi = min(xi, cache.s_dists[0] * c_tau_query);
         }
-        // const KeyT anchor1 = cache.pop1();
         const KeyT anchor = cache.pop();
         if (anchor == Cache::EMPTY_KEY) {
           break;

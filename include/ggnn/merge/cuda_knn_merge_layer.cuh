@@ -35,7 +35,7 @@ merge(const T kernel) {
 
 template <DistanceMeasure measure,
           typename ValueT, typename KeyT, int D, int K, int KF, int S,
-          int BLOCK_DIM_X, typename BaseT = ValueT, typename BAddrT = int32_t,
+          int BLOCK_DIM_X, int DIST_PAR_NUM, typename BaseT = ValueT, typename BAddrT = int32_t,
           typename GAddrT = int32_t>
 struct MergeKernel {
   static constexpr int KL = K - KF;
@@ -58,7 +58,7 @@ struct MergeKernel {
   static constexpr bool DIST_STATS = false;
   static constexpr bool OVERFLOW_STATS = false;
 
-  typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, 1, BLOCK_DIM_X, VISITED_SIZE,
+  typedef SimpleKNNCache<measure, ValueT, KeyT, KQuery, D, 1, BLOCK_DIM_X, DIST_PAR_NUM, VISITED_SIZE,
                           PRIOQ_SIZE, BEST_SIZE, BaseT, BAddrT, DIST_STATS,
                           OVERFLOW_STATS>
     Cache;
