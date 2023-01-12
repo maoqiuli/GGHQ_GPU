@@ -19,6 +19,7 @@ limitations under the License.
 #include <limits>
 #include <string>
 #include <vector>
+#include <omp.h>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -71,16 +72,25 @@ struct Dataset {
   std::vector<uint8_t> topKDuplicateEnd;
 
   Dataset(const std::string& basePath, const std::string& queryPath, const std::string& baseAttrPath, const std::string& queryAttrPath,
-          const std::string& gtPath, const size_t N_base = std::numeric_limits<size_t>::max(), const bool is_subdata = false) {
+          const std::string& gtPath, const std::vector<KeyT>& cluster_base, const std::vector<KeyT>& cluster_query, 
+          const size_t N_base = std::numeric_limits<size_t>::max(), const bool is_subdata = false) {
     subdata = is_subdata;
     if (!subdata) {
       VLOG(1) << "N_base: " << N_base;
 
-      bool success = loadBase(basePath, baseAttrPath, 0, 1000000000, N_base) && loadQuery(queryPath, queryAttrPath) && loadGT(gtPath);
+      bool success =  loadBase(basePath, baseAttrPath, cluster_base, 0, 1000000000, N_base) && 
+                      loadQuery(queryPath, queryAttrPath, cluster_query) && 
+                      loadGT(gtPath, cluster_query);
 
       if (!success)
         throw std::runtime_error(
             "failed to load dataset (see previous log entries for details).\n");
+
+      clusterGT(cluster_base);
+      // for (int i=0;i<10000;i++) {
+      //   if(i%100<10) printf("%d ", this->gt[i]);
+      //   if(i%100==9) printf("\n");
+      // }
     }
   }
 
@@ -144,13 +154,14 @@ struct Dataset {
   }
 
   /// load base vectors from file
-  bool loadBase(const std::string& base_file, const std::string& base_attr_file, size_t from = 0, size_t end = 100000000,
-                size_t num = std::numeric_limits<size_t>::max()) {
+  bool loadBase(const std::string& base_file, const std::string& base_attr_file, const std::vector<KeyT>& cluster, KeyT from = 0, KeyT end = 100000000,
+                KeyT num = std::numeric_limits<KeyT>::max()) {
     freeBase();
     freeBaseAttr();
-    XVecsLoader<BaseT> base_loader(base_file, false);
+    XVecsLoader<BaseT, KeyT> base_loader(base_file, false);
 
     num = std::min(num, base_loader.Num() - from);
+    num = std::min(num, static_cast<int>(cluster.size()));
     num = std::min(num, end - from);
     CHECK_GT(num, 0) << "The requested range contains no vectors.";
 
@@ -170,25 +181,26 @@ struct Dataset {
 
     CHECK_CUDA(cudaMallocHost(&h_base, base_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
 
-    base_loader.load(h_base, from, num);
+    base_loader.load(h_base, from, num, cluster);
 
-    XVecsLoader<int> base_attr_loader(base_attr_file, true);
+    XVecsLoader<int, KeyT> base_attr_loader(base_attr_file, true);
     D_base_attr = base_attr_loader.Dim();
     const size_t base_attr_memsize = static_cast<BAddrT>(N_base) * D_base_attr * sizeof(int);
     CHECK_CUDA(cudaMallocHost(&h_base_attr, base_attr_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
-    base_attr_loader.load_attr(h_base_attr, from, num);
+    base_attr_loader.load_attr(h_base_attr, from, num, cluster);
 
     return true;
   }
 
   /// load query vectors from file
-  bool loadQuery(const std::string& query_file, const std::string& query_attr_file, KeyT from = 0,
+  bool loadQuery(const std::string& query_file, const std::string& query_attr_file, const std::vector<KeyT>& cluster, KeyT from = 0,
                  KeyT num = std::numeric_limits<KeyT>::max()) {
     freeQuery();
     freeQueryAttr();
-    XVecsLoader<BaseT> query_loader(query_file, false);
+    XVecsLoader<BaseT, KeyT> query_loader(query_file, false);
 
     num = std::min(num, query_loader.Num() - from);
+    num = std::min(num, static_cast<int>(cluster.size()));
     CHECK_GT(num, 0) << "The requested range contains no vectors.";
 
     if (N_query == 0) {
@@ -212,19 +224,19 @@ struct Dataset {
 
     CHECK_CUDA(cudaMallocHost(&h_query, query_memsize, cudaHostAllocPortable));
 
-    query_loader.load(h_query, from, num);
+    query_loader.load(h_query, from, num, cluster);
 
-    XVecsLoader<int> query_attr_loader(query_attr_file, true);
+    XVecsLoader<int, KeyT> query_attr_loader(query_attr_file, true);
     D_query_attr = query_attr_loader.Dim();
-    const size_t query_attr_memsize = static_cast<BAddrT>(N_base) * D_query_attr * sizeof(int);
+    const size_t query_attr_memsize = static_cast<BAddrT>(N_query) * D_query_attr * sizeof(int);
     CHECK_CUDA(cudaMallocHost(&h_query_attr, query_attr_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
-    query_attr_loader.load_attr(h_query_attr, from, num);
+    query_attr_loader.load_attr(h_query_attr, from, num, cluster);
 
     return true;
   }
 
   /// load ground truth indices from file
-  bool loadGT(const std::string& gt_file, KeyT from = 0,
+  bool loadGT(const std::string& gt_file, const std::vector<KeyT>& cluster, KeyT from = 0,
               KeyT num = std::numeric_limits<KeyT>::max()) {
     freeGT();
 
@@ -242,9 +254,10 @@ struct Dataset {
       return true;
     }
 
-    XVecsLoader<KeyT> gt_loader(gt_file, false);
+    XVecsLoader<KeyT, KeyT> gt_loader(gt_file, false);
 
     num = std::min(num, gt_loader.Num() - from);
+    num = std::min(num, static_cast<int>(cluster.size()));
     CHECK_GT(num, 0) << "The requested range contains no vectors.";
 
     if (N_query == 0) {
@@ -263,16 +276,35 @@ struct Dataset {
     gt = (KeyT*) malloc(static_cast<BAddrT>(N_query) * K_gt * sizeof(KeyT));
     CHECK(gt);
 
-    gt_loader.load(gt, from, num);
+    gt_loader.load(gt, from, num, cluster);
     return true;
+  }
+
+  KeyT findID(const std::vector<KeyT>& cluster, KeyT begin, KeyT end, KeyT target) {
+    if (cluster.at(begin) == target) return begin;
+    if (cluster.at(end) == target) return end;
+    if (begin >= end - 1) return -1;
+    KeyT center = (begin + end) / 2;
+    if (cluster.at(center) > target) return findID(cluster, begin, center, target);
+    else return findID(cluster, center, end, target);
+  }
+
+  void clusterGT(const std::vector<KeyT>& cluster) {
+
+#pragma omp parallel for
+    for (size_t i=0; i < N_query * K_gt; i++) {
+      gt[i] = findID(cluster, 0, cluster.size() - 1, gt[i]);
+    }
   }
 
   template <DistanceMeasure measure, typename ValueT>
   ValueT compute_distance_query(KeyT index, KeyT query) const {
-    CHECK_GE(index, 0);
+    CHECK_GE(index, -1);
     CHECK_GE(query, 0);
     CHECK_LT(index, N_base);
     CHECK_LT(query, N_query);
+
+    if (index == -1) return std::numeric_limits<ValueT>::max();
 
     ValueT distance = 0.0f, index_norm = 0.0f, query_norm = 0.0f;
     for (int d=0; d<D; ++d)

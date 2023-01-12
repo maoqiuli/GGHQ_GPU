@@ -18,7 +18,7 @@ limitations under the License.
 #include <iostream>
 #include <string>
 
-template <typename ValueT>
+template <typename ValueT, typename KeyT>
 class Loader {
  public:
   Loader() : dimension(0), num_elements(0) {}
@@ -52,7 +52,9 @@ class Loader {
    * @param num  number of elements to read
    */
   virtual void load(ValueT* dst, size_t skip, size_t num) = 0;
+  virtual void load(ValueT* dst, size_t skip, size_t num, const std::vector<KeyT>& cluster) = 0;
   virtual void load_attr(ValueT* dst, size_t skip, size_t num) = 0;
+  virtual void load_attr(ValueT* dst, size_t skip, size_t num, const std::vector<KeyT>& cluster) = 0;
 
   int32_t Dim() const { return dimension; }
   int32_t Num() const { return num_elements; }

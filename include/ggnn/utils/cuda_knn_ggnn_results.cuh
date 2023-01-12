@@ -166,15 +166,15 @@ struct GGNNResults {
 
   float evaluateResults() {
     int c1 = 0;
-    int c1_including_duplicates = 0;
+    // int c1_including_duplicates = 0;
     int cKQuery = 0;
-    int cKQuery_including_duplicates = 0;
+    // int cKQuery_including_duplicates = 0;
     int rKQuery = 0;
-    int rKQuery_including_duplicates = 0;
+    // int rKQuery_including_duplicates = 0;
 
     for (int n = 0; n < dataset->N_query; n++) {
-      const uint8_t endTop1 = dataset->top1DuplicateEnd.at(n);
-      const uint8_t endTopK = dataset->topKDuplicateEnd.at(n);
+      const uint8_t endTop1 = 1;
+      const uint8_t endTopK = KQuery;
 
       CHECK_LE(endTopK, dataset->K_gt);
 
@@ -188,13 +188,13 @@ struct GGNNResults {
             if (!k_gt) {
               if (!k_result) ++c1;
               if (k_gt < KQuery) ++rKQuery;
-              ++rKQuery_including_duplicates;
+              // ++rKQuery_including_duplicates;
             }
-            if (k_gt < endTop1) {
-              if (!k_result) ++c1_including_duplicates;
-            }
+            // if (k_gt < endTop1) {
+            //   if (!k_result) ++c1_including_duplicates;
+            // }
             if (k_gt < KQuery) ++cKQuery;
-            ++cKQuery_including_duplicates;
+            // ++cKQuery_including_duplicates;
             continue;
           }
         }
@@ -203,12 +203,12 @@ struct GGNNResults {
 
     const float inv_num_points = 1.0f / dataset->N_query;
 
-    LOG(INFO) << "c@1 (=r@1): " << c1 * inv_num_points
-              << " +duplicates: " << c1_including_duplicates * inv_num_points;
+    LOG(INFO) << "c@1 (=r@1): " << c1 * inv_num_points;
+              // << " +duplicates: " << c1_including_duplicates * inv_num_points;
     if (KQuery <= dataset->K_gt) {
-      LOG(INFO) << "c@" << KQuery << ": " << cKQuery * inv_num_points / KQuery
-                << " +duplicates: "
-                << cKQuery_including_duplicates * inv_num_points / KQuery;
+      LOG(INFO) << "c@" << KQuery << ": " << cKQuery * inv_num_points / KQuery;
+                // << " +duplicates: "
+                // << cKQuery_including_duplicates * inv_num_points / KQuery;
     }
     // LOG(INFO) << "r@" << KQuery << ": " << rKQuery * inv_num_points
     //           << " +duplicates: "

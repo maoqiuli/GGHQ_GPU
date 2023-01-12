@@ -322,10 +322,10 @@ struct GGNNGPUInstance {
       cpu_buffer.disk_io_thread.join();
   }
 
-  void loadPartAsync(const std::string graph_dir, const int part_id, const int shard_id) {
+  void loadPartAsync(const std::string graph_dir, const int cluster_id, const int part_id, const int shard_id) {
     waitForDiskIO(shard_id);
     auto& cpu_buffer = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()];
-    auto load_part = [this, graph_dir, part_id, shard_id]() -> void {
+    auto load_part = [this, graph_dir, cluster_id, part_id, shard_id]() -> void {
       CHECK_CUDA(cudaSetDevice(gpu_id));
       auto& shard = ggnn_shards.at(shard_id%ggnn_shards.size());
       auto& cpu_buffer = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()];
@@ -345,9 +345,9 @@ struct GGNNGPUInstance {
         VLOG(4) << "[GPU: " << gpu_id << "] part " << part_id << " is already loaded on cpu buffer " << shard_id%ggnn_cpu_buffers.size();
       }
       else {
-        const std::string part_attr_filename = graph_dir + "part_" + std::to_string(part_id) + ".attr";
+        const std::string part_attr_filename = graph_dir + "cluster_" + std::to_string(cluster_id) + "_part_" + std::to_string(part_id) + ".attr";
         perfetchAttributes_load(part_attr_filename);
-        const std::string part_filename = graph_dir + "part_" + std::to_string(part_id) + ".ggnn";
+        const std::string part_filename = graph_dir + "cluster_" + std::to_string(cluster_id) + "_part_" + std::to_string(part_id) + ".ggnn";
         cpu_buffer.load(part_filename);
         VLOG(2) << "[GPU: " << gpu_id << "] loaded part " << part_id << " from " << part_filename.c_str();
         cpu_buffer.current_part_id = part_id;
@@ -386,7 +386,7 @@ struct GGNNGPUInstance {
     cpu_buffer.disk_io_thread = std::thread(upload_part);
   }
 
-  void storePartAsync(const std::string graph_dir, const int part_id, const int shard_id) {
+  void storePartAsync(const std::string graph_dir, const int cluster_id, const int part_id, const int shard_id) {
     waitForDiskIO(shard_id);
     auto& cpu_buffer = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()];
       CHECK_CUDA(cudaSetDevice(gpu_id));
@@ -402,9 +402,9 @@ struct GGNNGPUInstance {
         VLOG(4) << "[GPU: " << gpu_id << "] downloaded part " << part_id;
       }
       perfetchAttributes(shard_id);
-      const std::string part_attr_filename = graph_dir + "part_" + std::to_string(part_id) + ".attr";
+      const std::string part_attr_filename = graph_dir + "cluster_" + std::to_string(cluster_id) + "_part_" + std::to_string(part_id) + ".attr";
       perfetchAttributes_store(part_attr_filename);
-      const std::string part_filename = graph_dir + "part_" + std::to_string(part_id) + ".ggnn";
+      const std::string part_filename = graph_dir + "cluster_" + std::to_string(cluster_id) + "_part_" + std::to_string(part_id) + ".ggnn";
       cpu_buffer.store(part_filename);
       VLOG(2) << "[GPU: " << gpu_id << "] stored part " << part_id << " to " << part_filename.c_str();
   }

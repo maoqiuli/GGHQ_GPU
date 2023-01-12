@@ -38,10 +38,10 @@ void SplitString(const std::string &s, std::vector<int> &v, const std::string &c
 }
 
 
-template <typename ValueT>
-class XVecsLoader : public Loader<ValueT> {
+template <typename ValueT, typename KeyT>
+class XVecsLoader : public Loader<ValueT, KeyT> {
  public:
-  explicit XVecsLoader(const std::string& path, const bool is_txt) : Loader<ValueT>(path, is_txt) {
+  explicit XVecsLoader(const std::string& path, const bool is_txt) : Loader<ValueT, KeyT>(path, is_txt) {
 
     if (is_txt)
     {
@@ -79,6 +79,24 @@ class XVecsLoader : public Loader<ValueT> {
     DLOG(INFO) << "Done";
   }
 
+  void load(ValueT* dst, size_t skip, size_t num, const std::vector<KeyT>& cluster) override {
+    {
+      DLOG(INFO) << "Loading " << num << " vectors starting at " << skip
+                << " ...";
+
+      size_t num_data = cluster.size();
+      this->num_elements = num_data;
+      for (size_t i=0; i < num_data; i++) {
+        int offset = (i==0 ? cluster[i] : cluster[i] - cluster[i-1] - 1) * this->dimension * sizeof(ValueT);
+        this->hnd->seekg(offset, std::ios::cur);
+        this->hnd->read((char *) dst, this->dimension * sizeof(ValueT));
+        dst += this->dimension;
+      }
+    }
+    
+    DLOG(INFO) << "Done";
+  }
+
   void load_attr(ValueT* dst, size_t skip, size_t num) override {
     DLOG(INFO) << "Loading " << num << " attributes starting at " << skip
               << " ...";
@@ -96,14 +114,34 @@ class XVecsLoader : public Loader<ValueT> {
 
     DLOG(INFO) << "Done";
   }
+
+  void load_attr(ValueT* dst, size_t skip, size_t num, const std::vector<KeyT>& cluster) override {
+    DLOG(INFO) << "Loading " << num << " attributes starting at " << skip
+              << " ...";
+
+    std::vector<std::string> temp(this->num_elements);
+    for (int i = 0;i < this->num_elements;i++) {
+      getline(*(this->hnd), temp[i]);
+    }
+    for (int i = 0;i < cluster.size();i++) {
+      std::vector<int> tmp2;
+      SplitString(temp[cluster[i]], tmp2, " ");
+      for (int j = 0;j < this->dimension;j++) {
+        dst[i * this->dimension + j] = tmp2[j];
+      }
+    }
+    this->num_elements = cluster.size();
+
+    DLOG(INFO) << "Done";
+  }
 };
 
 
 
 
 
-using FVecsLoader = XVecsLoader<float>;
-using IVecsLoader = XVecsLoader<int>;
-using BVecsLoader = XVecsLoader<uint8_t>;
+using FVecsLoader = XVecsLoader<float, int32_t>;
+using IVecsLoader = XVecsLoader<int, int32_t>;
+using BVecsLoader = XVecsLoader<uint8_t, int32_t>;
 
 #endif  // INCLUDE_IO_LOADER_ANN_HPP_

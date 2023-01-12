@@ -16,6 +16,11 @@ limitations under the License.
 #ifndef INCLUDE_GGNN_UTILS_CUDA_KNN_UTILS_CUH_
 #define INCLUDE_GGNN_UTILS_CUDA_KNN_UTILS_CUH_
 
+#include <iostream>
+#include <vector>
+#include <string>
+
+
 #include <cuda.h>
 #include <cuda_runtime.h>
 
@@ -70,4 +75,51 @@ void launcher(const int log_level, T* kernel, int N, cudaStream_t stream = 0) {
   kernel->launch(stream);
 }
 
+template <typename KeyT>
+void clusterLabel(const std::string& path, const size_t& N_cluster, std::vector<std::vector<KeyT>>& cluster_base, std::vector<std::vector<KeyT>>& cluster_query) {
+  std::ifstream f(path, std::ios_base::in | std::ios_base::binary);
+  if(!f.is_open()) throw std::runtime_error("Dataset file " + path + " does not exists");
+
+  int32_t n_cluster, cluster_size;
+  f.read((char *) &n_cluster, sizeof(int32_t));
+  CHECK_EQ(N_cluster, n_cluster);
+
+  for (size_t i=0; i < n_cluster; i++) {
+    f.read((char *) &cluster_size, sizeof(int32_t));
+    std::vector<KeyT> cluster(cluster_size);
+    for (size_t j=0; j < cluster_size; j++) {
+      KeyT data;
+      f.read((char *) &data, sizeof(KeyT));
+      cluster[j] = data;
+    }
+    sort(cluster.begin(), cluster.end());
+    cluster_base[i] = cluster;
+  }
+
+  for (size_t i=0; i < n_cluster; i++) {
+    f.read((char *) &cluster_size, sizeof(int32_t));
+    std::vector<KeyT> cluster(cluster_size);
+    for (size_t j=0; j < cluster_size; j++) {
+      KeyT data;
+      f.read((char *) &data, sizeof(KeyT));
+      cluster[j] = data;
+    }
+    sort(cluster.begin(), cluster.end());
+    cluster_query[i] = cluster;
+  }
+
+  int n_query = 0;
+  for (size_t i=0; i < n_cluster; i++) n_query += cluster_query[i].size();
+  for (size_t i=0; i < n_cluster; i++) {
+    for (size_t j=0; cluster_query[i].size() < n_query; j++) {
+      cluster_query[i].push_back(cluster_query[i][j]);
+    }
+  }
+
+  f.close();
+}
+
+
 #endif  // INCLUDE_GGNN_UTILS_CUDA_KNN_UTILS_CUH_
+
+

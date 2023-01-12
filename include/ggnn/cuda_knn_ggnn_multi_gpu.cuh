@@ -104,9 +104,13 @@ struct GGNNMultiGPU {
 
   const bool generate_gt;
 
+  const int cluster_id;
+
   GGNNMultiGPU(const std::string& basePath, const std::string& queryPath, const std::string& baseAttrPath, const std::string& queryAttrPath,
-       const std::string& gtPath, const int L, const float tau_build, const size_t N_base = std::numeric_limits<size_t>::max())
-      : dataset{basePath, queryPath, baseAttrPath, queryAttrPath, gtPath, N_base},
+       const std::string& gtPath, const std::vector<KeyT>& cluster_base, const std::vector<KeyT>& cluster_query, const int cluster_id, 
+       const int L, const float tau_build, const size_t N_base = std::numeric_limits<size_t>::max())
+      : dataset{basePath, queryPath, baseAttrPath, queryAttrPath, gtPath, cluster_base, cluster_query, N_base},
+        cluster_id{cluster_id},
         L{L},
         tau_build{tau_build},
         generate_gt{gtPath.empty()} {
@@ -313,7 +317,9 @@ struct GGNNMultiGPU {
       }
 
       for (size_t i = 0; i < DBA; i++) {
-        Dataset* subdataset = new Dataset("basePath", "queryPath", "baseAttrPath", "queryAttrPath", "gtPath", 0, true);
+        std::vector<KeyT> cluster_base;
+        std::vector<KeyT> cluster_query;
+        Dataset* subdataset = new Dataset("basePath", "queryPath", "baseAttrPath", "queryAttrPath", "gtPath", cluster_base, cluster_query, 0, true);
         subdataset->load_datasets(bucket_size[i], dataset.D, dataset.h_base, buckets[i]);
         datasets.push_back(subdataset);
       }
@@ -397,7 +403,7 @@ struct GGNNMultiGPU {
 
           if (swap_to_disk || swap_to_ram) {
             if (swap_to_disk)
-              gpu_instance.storePartAsync(graph_dir, part_id, i);
+              gpu_instance.storePartAsync(graph_dir, cluster_id, part_id, i);
             else
               gpu_instance.downloadPartAsync(part_id, i);
 
@@ -502,7 +508,7 @@ struct GGNNMultiGPU {
 
         for (int i = 0; i < num_iterations; i++) {
           const int part_id = device_i * num_iterations + i;
-          gpu_instance.storePartAsync(graph_dir, part_id, i);
+          gpu_instance.storePartAsync(graph_dir, cluster_id, part_id, i);
         }
         for (int i = 0; i < num_iterations; i++) {
           gpu_instance.waitForDiskIO(i);
@@ -538,7 +544,7 @@ struct GGNNMultiGPU {
 
         for (int i = 0; i < num_iterations; i++) {
           const int part_id = device_i * num_iterations + i;
-          gpu_instance.loadPartAsync(graph_dir, part_id, i);
+          gpu_instance.loadPartAsync(graph_dir, cluster_id, part_id, i);
         }
         for (int i = 0; i < num_iterations; i++)
           gpu_instance.waitForDiskIO(i);
@@ -555,7 +561,7 @@ struct GGNNMultiGPU {
   void query(const float tau_query) {
     CHECK(!ggnn_gpu_instances.empty()) << "configure() the multi-GPU setup first!";
 
-    dataset.template checkForDuplicatesInGroundTruth<measure, ValueT>(KQuery);
+    // dataset.template checkForDuplicatesInGroundTruth<measure, ValueT>(KQuery);
 
     const int num_gpus = int(ggnn_gpu_instances.size());
     const int N_shard = ggnn_gpu_instances[0].N_shard;
@@ -598,7 +604,7 @@ struct GGNNMultiGPU {
           for (int i = 0; i < num_gpu_buffers; i++) {
             const int j = process_shards_back_to_front ? num_iterations-i-1 : i;
             const int part_id = device_i * num_iterations + j;
-            gpu_instance.loadPartAsync(graph_dir, part_id, j);
+            gpu_instance.loadPartAsync(graph_dir, cluster_id, part_id, i);
           }
         }
 
@@ -634,11 +640,11 @@ struct GGNNMultiGPU {
             // prefetch only as much in parallel as there are cpu buffers
             if (process_shards_back_to_front) {
               if (j-prefetch_amount < num_iterations-num_gpu_buffers && j-prefetch_amount >= 0) {
-                gpu_instance.loadPartAsync(graph_dir, part_id-prefetch_amount, j-prefetch_amount);
+                gpu_instance.loadPartAsync(graph_dir, cluster_id, part_id-prefetch_amount, j-prefetch_amount);
               }
             }
             else if (j+prefetch_amount >= num_gpu_buffers && j+prefetch_amount < num_iterations) {
-              gpu_instance.loadPartAsync(graph_dir, part_id+prefetch_amount, j+prefetch_amount);
+              gpu_instance.loadPartAsync(graph_dir, cluster_id, part_id+prefetch_amount, j+prefetch_amount);
             }
           }
 
