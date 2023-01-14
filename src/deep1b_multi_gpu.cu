@@ -103,9 +103,9 @@ int main(int argc, char* argv[]) {
   /// dimension of the vector
   const int D = 96;
   /// dimension of the attribute
-  const int DBA = 1024;
+  const int DBA = 16;
   /// dimension of the qurey attribute
-  const int DA = 512;
+  const int DA = 1;
   /// distance measure (Euclidean or Cosine)
   const DistanceMeasure measure = Euclidean;
   const int DistPar = 4;
@@ -161,11 +161,12 @@ int main(int argc, char* argv[]) {
   }
 
   const size_t N_base = FLAGS_base * FLAGS_factor;
+  const size_t N_base_fac = FLAGS_base * FLAGS_factor / 1000000;
   const int N_shard = FLAGS_shard * FLAGS_factor;
 
-  std::string base = (FLAGS_base == 1)?"":std::to_string(FLAGS_base);
+  std::string base = (N_base_fac == 1)?"":std::to_string(N_base_fac);
   std::string base_filename = FLAGS_base_filename + 
-              "deep" + std::to_string(FLAGS_base) + "m/base." + std::to_string(FLAGS_base) + "m.fbin";
+              "deep" + std::to_string(N_base_fac) + "m/base." + std::to_string(N_base_fac) + "m.fbin";
   std::string query_filename = FLAGS_query_filename + 
               "query.public.10K.fbin";
   std::string base_attr_filename = FLAGS_base_attr_filename + 
@@ -175,7 +176,7 @@ int main(int argc, char* argv[]) {
   std::string groundtruth_filename = FLAGS_groundtruth_filename + 
               "deep" + base + "_groundtruth_label_value_" + std::to_string(DBA) + "_labeldim_" + std::to_string(DA) + ".bin";
   std::string graph_dir = FLAGS_graph_dir + 
-              "deep" + std::to_string(FLAGS_base) + "m_" + std::to_string(DBA) + "/";
+              "deep" + std::to_string(N_base_fac) + "m_" + std::to_string(DBA) + "/";
 
   typedef GGNNMultiGPU<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, DistPar, D, DBA, DA, KBuild,
                        KF, KBuild_, KF_, KQuery, S>

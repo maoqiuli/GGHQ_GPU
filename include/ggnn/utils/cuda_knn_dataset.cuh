@@ -133,13 +133,13 @@ struct Dataset {
     K_gt = 0;
   }
 
-  void load_datasets(int n, int d, BaseT* h_base_all, std::vector<int>& data_ids) {
-    N_base = n;
+  void load_datasets(int offest, int end, int d, BaseT* h_base_all, std::vector<int>& data_ids) {
+    N_base = end - offest;
     D = d;
     const size_t base_memsize = static_cast<BAddrT>(N_base) * D * sizeof(BaseT);
     CHECK_CUDA(cudaMallocHost(&h_base, base_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
-    for (size_t i = 0; i < n; i++) {
-      memcpy(h_base + i * D, h_base_all + data_ids[i] * D, D * sizeof(BaseT));
+    for (size_t i = 0; i < N_base; i++) {
+      memcpy(h_base + i * D, h_base_all + data_ids[i + offest] * D, D * sizeof(BaseT));
     }
   }
 

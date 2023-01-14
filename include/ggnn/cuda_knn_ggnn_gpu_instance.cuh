@@ -111,6 +111,7 @@ struct GGNNGPUInstance {
 
   unsigned* per_attr{nullptr};
   size_t per_attr_memsize;
+  size_t per_attr_size;
   int ATTRS_SIZE = ceil(log2(DBA));
   int ATTRS_PER_INT = (sizeof(unsigned) * 8 / ATTRS_SIZE);
 
@@ -191,8 +192,9 @@ struct GGNNGPUInstance {
     CHECK_CUDA(cudaDeviceSynchronize());
     CHECK_CUDA(cudaPeekAtLastError());
 
-    per_attr_memsize = ceil((float)N_shard / (float)ATTRS_PER_INT) * (KBuild + KBuild_) * sizeof(unsigned);
-    CHECK_CUDA(cudaMallocHost(&per_attr, per_attr_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
+    per_attr_size = ceil((float)N_shard / (float)ATTRS_PER_INT) * (KBuild + KBuild_);
+    per_attr_memsize = per_attr_size * sizeof(unsigned);
+    CHECK_CUDA(cudaMallocHost(&per_attr, per_attr_memsize * num_shards, cudaHostAllocPortable | cudaHostAllocWriteCombined));
   }
 
   GGNNGPUInstance(const GGNNGPUInstance& other)
@@ -346,7 +348,7 @@ struct GGNNGPUInstance {
       }
       else {
         const std::string part_attr_filename = graph_dir + "part_" + std::to_string(part_id) + ".attr";
-        perfetchAttributes_load(part_attr_filename);
+        perfetchAttributes_load(part_attr_filename, shard_id);
         const std::string part_filename = graph_dir + "part_" + std::to_string(part_id) + ".ggnn";
         cpu_buffer.load(part_filename);
         VLOG(2) << "[GPU: " << gpu_id << "] loaded part " << part_id << " from " << part_filename.c_str();
@@ -389,8 +391,10 @@ struct GGNNGPUInstance {
   void storePartAsync(const std::string graph_dir, const int part_id, const int shard_id) {
     waitForDiskIO(shard_id);
     auto& cpu_buffer = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()];
+    auto store_part = [this, graph_dir, part_id, shard_id]() -> void {
       CHECK_CUDA(cudaSetDevice(gpu_id));
       auto& shard = ggnn_shards.at(shard_id%ggnn_shards.size());
+      auto& cpu_buffer = ggnn_cpu_buffers[shard_id%ggnn_cpu_buffers.size()];
 
       if (cpu_buffer.current_part_id == part_id) {
         VLOG(4) << "[GPU: " << gpu_id << "] part " << part_id << " is already downloaded";
@@ -403,10 +407,12 @@ struct GGNNGPUInstance {
       }
       perfetchAttributes(shard_id);
       const std::string part_attr_filename = graph_dir + "part_" + std::to_string(part_id) + ".attr";
-      perfetchAttributes_store(part_attr_filename);
+      perfetchAttributes_store(part_attr_filename, shard_id);
       const std::string part_filename = graph_dir + "part_" + std::to_string(part_id) + ".ggnn";
       cpu_buffer.store(part_filename);
       VLOG(2) << "[GPU: " << gpu_id << "] stored part " << part_id << " to " << part_filename.c_str();
+    };
+    cpu_buffer.disk_io_thread = std::thread(store_part);
   }
 
   void downloadPartAsync(const int part_id, const int shard_id) {
@@ -513,7 +519,7 @@ struct GGNNGPUInstance {
         int n = i * ATTRS_PER_INT + j;
         if (n >= N_shard) break;
         for (int k=0; k < K; k++) {
-          per_attr[i * K + k] = (per_attr[i * K + k]<<ATTRS_SIZE) + (unsigned)(dataset->h_base_attr[graph[n * K + k]]);
+          per_attr[per_attr_size * shard_id + i * K + k] = (per_attr[per_attr_size * shard_id + i * K + k]<<ATTRS_SIZE) + (unsigned)(dataset->h_base_attr[shard_id * N_shard + graph[n * K + k]]);
         }
       }
     }
@@ -528,7 +534,7 @@ struct GGNNGPUInstance {
 
     CHECK(outFile.is_open()) << "Unable to open " << filename;
 
-    outFile.write(reinterpret_cast<char*>(per_attr), per_attr_memsize);
+    outFile.write(reinterpret_cast<char*>(per_attr) + per_attr_memsize * shard_id, per_attr_memsize);
 
     outFile.close();
   }
@@ -548,7 +554,7 @@ struct GGNNGPUInstance {
     CHECK_EQ(filesize, per_attr_memsize) << "Error on loading" << filename <<
        ". File size of GGNNGraph does not match the expected size.";
 
-    inFile.read(reinterpret_cast<char*>(per_attr), per_attr_memsize);
+    inFile.read(reinterpret_cast<char*>(per_attr) + per_attr_memsize * shard_id, per_attr_memsize);
 
     inFile.close();
   }
@@ -575,7 +581,7 @@ struct GGNNGPUInstance {
     query_kernel.d_query_attr = dataset->h_query_attr;
 
     query_kernel.d_graph = shard.d_graph;
-    query_kernel.d_per_attr = per_attr;
+    query_kernel.d_per_attr = per_attr + per_attr_size * shard_id;
     query_kernel.d_query_results = ggnn_query.d_query_result_ids;
     query_kernel.d_query_results_dists = ggnn_query.d_query_result_dists;
 
