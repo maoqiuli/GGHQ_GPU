@@ -139,7 +139,7 @@ struct Dataset {
     const size_t base_memsize = static_cast<BAddrT>(N_base) * D * sizeof(BaseT);
     CHECK_CUDA(cudaMallocHost(&h_base, base_memsize, cudaHostAllocPortable | cudaHostAllocWriteCombined));
     for (size_t i = 0; i < N_base; i++) {
-      memcpy(h_base + i * D, h_base_all + data_ids[i + offest] * D, D * sizeof(BaseT));
+      memcpy(h_base + static_cast<BAddrT>(i) * D, h_base_all + static_cast<BAddrT>(data_ids[i + offest]) * D, D * sizeof(BaseT));
     }
   }
 
