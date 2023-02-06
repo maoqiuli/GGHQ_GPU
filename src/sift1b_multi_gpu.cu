@@ -36,30 +36,32 @@ inline bool file_exists(const std::string& name) {
 
 #include <iostream>
 #include <vector>
+#include <algorithm>
 
 #include "ggnn/cuda_knn_ggnn_multi_gpu.cuh"
 #include "ggnn/utils/cuda_knn_constants.cuh"
 
 DEFINE_string(
-    mode, "bqs",
+    mode, "bq",
     "Mode: bq -> build_and_query, bs -> build_and_store, lq -> load_and_query");
-DEFINE_string(base_filename, "", "path to file with base vectors");
-DEFINE_string(query_filename, "", "path to file with perform_query vectors");
-DEFINE_string(
-    groundtruth_filename, "",
-    "path to directory with groundtruth vectors of form idx_{B}M.ivecs");
-DEFINE_string(graph_dir, "/home/eva_data/zhanghy/ggnn-graph/", "directory to store and load ggnn graph files.");
+DEFINE_string(base_filename, "/home/maoqiuli21/nfs/data/sift/", "path to file with base vectors");
+DEFINE_string(query_filename, "/home/maoqiuli21/nfs/data/sift/", "path to file with perform_query vectors");
+DEFINE_string(cluster_filename, "/home/maoqiuli21/nfs/data/sift/", "path to file with base vectors");
+DEFINE_string(base_attr_filename, "/home/maoqiuli21/nfs/data/label/", "path to file with base attributes");
+DEFINE_string(query_attr_filename, "/home/maoqiuli21/nfs/data/label/", "path to file with query attributes");
+DEFINE_string(groundtruth_filename, "/home/maoqiuli21/nfs/data/label/", "path to file with groundtruth");
+DEFINE_string(graph_dir, "/home/maoqiuli21/nfs/index_ggnnlbsearch/adage/", "directory to store and load ggnn graph files.");
 DEFINE_double(tau, 0.5, "Parameter tau");
 DEFINE_int32(factor, 1000000, "Factor");
 DEFINE_int32(base, 1, "N_base: base x factor");
-DEFINE_int32(shard, 1, "N_shard: shard x factor");
+DEFINE_int32(cluster, 1, "N_cluster: Number of clusters");
 DEFINE_int32(refinement_iterations, 2, "Number of refinement iterations");
 DEFINE_string(gpu_ids, "0", "GPU id");
 DEFINE_bool(grid_search, false,
             "Perform queries for a wide range of parameters.");
 
 int main(int argc, char* argv[]) {
-  FLAGS_log_dir = "/home/maoqiuli21/project/ggnn/build_local/log/";
+  FLAGS_log_dir = "/home/maoqiuli21/project/ggnn_lbsearch/build_local/log/";
   google::InitGoogleLogging(argv[0]);
   google::LogToStderr();
 
@@ -72,10 +74,10 @@ int main(int argc, char* argv[]) {
   google::ParseCommandLineFlags(&argc, &argv, true);
 
   LOG(INFO) << "Reading files";
-  CHECK(file_exists(FLAGS_base_filename))
-      << "File for base vectors has to exist";
-  CHECK(file_exists(FLAGS_query_filename))
-      << "File for perform_query vectors has to exist";
+  // CHECK(file_exists(FLAGS_base_filename))
+  //     << "File for base vectors has to exist";
+  // CHECK(file_exists(FLAGS_query_filename))
+  //     << "File for perform_query vectors has to exist";
 
   CHECK_GE(FLAGS_tau, 0) << "Tau has to be bigger or equal 0.";
   CHECK_GE(FLAGS_refinement_iterations, 0)
@@ -102,19 +104,29 @@ int main(int argc, char* argv[]) {
   //
   /// dimension of the dataset
   const int D = 128;
+  /// dimension of the attribute
+  const int DBA = 16;
+  /// dimension of the qurey attribute
+  const int DA = 1;
   /// distance measure (Euclidean or Cosine)
   const DistanceMeasure measure = Euclidean;
+  const int DistPar = 4;
   //
   // search-graph configuration
   //
-  /// number of neighbors per point in the graph
-  const int KBuild = 20;
+  /// number of neighbors per point in the global graph
+  const int KBuild = 12;
   /// maximum number of inverse/symmetric links (KBuild / 2 usually works best)
   const int KF = KBuild / 2;
+  /// number of neighbors per point in the local graph
+  const int KBuild_ = 12;
+  /// maximum number of inverse/symmetric links (KBuild / 2 usually works best)
+  const int KF_ = KBuild_ / 2;
   /// segment/batch size (needs to be > KBuild-KF)
   const int S = 32;
   /// graph height / number of layers (4 usually performs best)
   const int L = 4;
+
   //
   // query configuration
   //
@@ -126,6 +138,10 @@ int main(int argc, char* argv[]) {
 
   LOG(INFO) << "Using the following parameters " << KBuild << " (KBuild) " << KF
             << " (KF) " << S << " (S) " << L << " (L) " << D << " (D) ";
+
+  typedef GGNNMultiGPU<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, DistPar, D, DBA, DA, KBuild,
+                        KF, KBuild_, KF_, KQuery, S>
+        GGNN;
 
   std::istringstream iss(FLAGS_gpu_ids);
   std::vector<std::string> results(std::istream_iterator<std::string>{iss},
@@ -150,32 +166,72 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  std::string base = (FLAGS_base == 1)?"":std::to_string(FLAGS_base);
+  std::string base_filename = FLAGS_base_filename + 
+              "sift" + std::to_string(FLAGS_base) + "m/base." + std::to_string(FLAGS_base) + "m.u8bin";
+  std::string query_filename = FLAGS_query_filename + 
+              "query.public.10K.u8bin";
+  std::string cluster_filename = FLAGS_cluster_filename + 
+              "sift" + std::to_string(FLAGS_base) + "m/clusters." + std::to_string(FLAGS_cluster) + ".bin";
+  std::string base_attr_filename = FLAGS_base_attr_filename + 
+              "label_sift" + base + "_base_value_" + std::to_string(DBA) + ".txt";
+  std::string query_attr_filename = FLAGS_query_attr_filename + 
+              "label_sift" + base + "_query_value_" + std::to_string(DBA) + "_labeldim_" + std::to_string(DA) + ".txt";
+  std::string groundtruth_filename = FLAGS_groundtruth_filename + 
+              "sift" + base + "_groundtruth_label_value_" + std::to_string(DBA) + "_labeldim_" + std::to_string(DA) + ".bin";
+  std::string graph_dir = FLAGS_graph_dir + 
+              "sift" + std::to_string(FLAGS_base) + "m_" + std::to_string(DBA) + "/";
+
   const size_t N_base = FLAGS_base * FLAGS_factor;
-  const int N_shard = FLAGS_shard * FLAGS_factor;
+  const size_t N_cluster = FLAGS_cluster;
 
-  std::cout << "FLAGS_groundtruth_filename: " << FLAGS_groundtruth_filename << "\n";
+  std::vector<std::vector<KeyT>> cluster_base(N_cluster);
+  std::vector<std::vector<KeyT>> cluster_query(N_cluster);
+  clusterLabel<KeyT> (cluster_filename, N_cluster, cluster_base, cluster_query);
+  
+  std::vector<std::vector<std::tuple<float, float, float, float>>> results_vector;
 
-//   char groundtruth_filename_buffer[64];
-//   snprintf(groundtruth_filename_buffer, 64, "/groundtruth.%dm.bin",
-//       static_cast<int>(N_base / 1000000));
+  for (int cluster_id=0; cluster_id < N_cluster; cluster_id++) {
 
-//   std::string groundtruth_filename =
-//       FLAGS_groundtruth_dir + groundtruth_filename_buffer;
+    const size_t N_shard = cluster_base[cluster_id].size();
+    
+    GGNN ggnn{
+        base_filename,
+        query_filename,
+        base_attr_filename,
+        query_attr_filename,
+        file_exists(groundtruth_filename) ? groundtruth_filename : "", 
+        cluster_base[cluster_id], 
+        cluster_query[cluster_id],
+        cluster_id,
+        L,
+        static_cast<float>(FLAGS_tau),
+        N_shard};
 
-//   std::cout << "groundtruth_filename: " << groundtruth_filename << "\n";
+    results_vector.push_back(ggnn.ggnnMain(gpus, FLAGS_mode, N_shard, graph_dir,
+                                      FLAGS_refinement_iterations, FLAGS_grid_search));
+  }
 
-  typedef GGNNMultiGPU<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, KBuild,
-                       KF, KQuery, S>
-      GGNN;
-  GGNN ggnn{FLAGS_base_filename,
-            FLAGS_query_filename,
-            file_exists(FLAGS_groundtruth_filename) ? FLAGS_groundtruth_filename : "",
-            L,
-            static_cast<float>(FLAGS_tau),
-            N_base};
-
-  ggnn.ggnnMain(gpus, FLAGS_mode, N_shard, FLAGS_graph_dir,
-                FLAGS_refinement_iterations, FLAGS_grid_search);
+  if (FLAGS_mode.find('q') != std::string::npos) {
+    std::vector<std::tuple<float, float, float, float>> result_vector = results_vector[0];
+    for (int cluster_id=1; cluster_id < N_cluster; cluster_id++) {
+      for (int i=0; i < results_vector[cluster_id].size(); i++) {
+        std::get<0>(result_vector[i]) += std::get<0>(results_vector[cluster_id][i]); 
+        std::get<1>(result_vector[i]) += std::get<1>(results_vector[cluster_id][i]); 
+        std::get<2>(result_vector[i]) += std::get<2>(results_vector[cluster_id][i]); 
+        std::get<3>(result_vector[i]) += std::get<3>(results_vector[cluster_id][i]); 
+      }
+    }
+    std::cout << "**********************************\n";
+    std::cout << "tau\trecall\tQPS\ttime pre query\t\n";
+    for (int i = 0; i < result_vector.size(); i++) {
+      std::cout << std::get<0>(result_vector[i]) / N_cluster << "\t";
+      std::cout << std::get<1>(result_vector[i]) / N_cluster << "\t";
+      std::cout << std::get<2>(result_vector[i]) / N_cluster << "\t";
+      std::cout << std::get<3>(result_vector[i]) / N_cluster << "\t";
+      std::cout << std::endl;
+    }
+  }
 
   printf("done! \n");
   gflags::ShutDownCommandLineFlags();

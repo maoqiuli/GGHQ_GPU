@@ -107,7 +107,7 @@ int main(int argc, char* argv[]) {
   /// dimension of the attribute
   const int DBA = 16;
   /// dimension of the qurey attribute
-  const int DA = 16;
+  const int DA = 1;
   /// distance measure (Euclidean or Cosine)
   const DistanceMeasure measure = Euclidean;
   const int DistPar = 4;
@@ -189,6 +189,7 @@ int main(int argc, char* argv[]) {
   std::vector<std::vector<KeyT>> cluster_query(N_cluster);
   clusterLabel<KeyT> (cluster_filename, N_cluster, cluster_base, cluster_query);
   
+  std::vector<std::vector<std::tuple<float, float, float, float>>> results_vector;
 
   for (int cluster_id=0; cluster_id < N_cluster; cluster_id++) {
 
@@ -207,8 +208,29 @@ int main(int argc, char* argv[]) {
         static_cast<float>(FLAGS_tau),
         N_shard};
 
-    ggnn.ggnnMain(gpus, FLAGS_mode, N_shard, graph_dir,
-                  FLAGS_refinement_iterations, FLAGS_grid_search);
+    results_vector.push_back(ggnn.ggnnMain(gpus, FLAGS_mode, N_shard, graph_dir,
+                                      FLAGS_refinement_iterations, FLAGS_grid_search));
+  }
+
+  if (FLAGS_mode.find('q') != std::string::npos) {
+    std::vector<std::tuple<float, float, float, float>> result_vector = results_vector[0];
+    for (int cluster_id=1; cluster_id < N_cluster; cluster_id++) {
+      for (int i=0; i < results_vector[cluster_id].size(); i++) {
+        std::get<0>(result_vector[i]) += std::get<0>(results_vector[cluster_id][i]); 
+        std::get<1>(result_vector[i]) += std::get<1>(results_vector[cluster_id][i]); 
+        std::get<2>(result_vector[i]) += std::get<2>(results_vector[cluster_id][i]); 
+        std::get<3>(result_vector[i]) += std::get<3>(results_vector[cluster_id][i]); 
+      }
+    }
+    std::cout << "**********************************\n";
+    std::cout << "tau\trecall\tQPS\ttime pre query\t\n";
+    for (int i = 0; i < result_vector.size(); i++) {
+      std::cout << std::get<0>(result_vector[i]) / N_cluster << "\t";
+      std::cout << std::get<1>(result_vector[i]) / N_cluster << "\t";
+      std::cout << std::get<2>(result_vector[i]) / N_cluster << "\t";
+      std::cout << std::get<3>(result_vector[i]) / N_cluster << "\t";
+      std::cout << std::endl;
+    }
   }
 
   printf("done! \n");

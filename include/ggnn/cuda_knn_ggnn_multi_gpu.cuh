@@ -119,7 +119,7 @@ struct GGNNMultiGPU {
     CHECK_EQ(dataset.D_query_attr, DA) << "DIM needs to be the same";
   }
 
-  void ggnnMain(const std::vector<int>& gpus, const std::string& mode,
+  std::vector<std::tuple<float, float, float, float>> ggnnMain(const std::vector<int>& gpus, const std::string& mode,
                 const int N_shard, const std::string& graph_dir,
                 const int refinement_iterations,
                 const bool grid_search) {
@@ -178,6 +178,8 @@ struct GGNNMultiGPU {
       result_output();
     }
     if (build) free_datasets();
+
+    return result_vector;
   }
 
   void result_output() {
