@@ -57,6 +57,7 @@ DEFINE_int32(base, 1, "N_base: base x factor");
 DEFINE_int32(cluster, 1, "N_cluster: Number of clusters");
 DEFINE_int32(refinement_iterations, 2, "Number of refinement iterations");
 DEFINE_string(gpu_ids, "0", "GPU id");
+DEFINE_bool(no_extension, false, "not edge extension.");
 DEFINE_bool(grid_search, false,
             "Perform queries for a wide range of parameters.");
 
@@ -105,9 +106,9 @@ int main(int argc, char* argv[]) {
   /// dimension of the dataset
   const int D = 128;
   /// dimension of the attribute
-  const int DBA = 16;
+  const int DBA = 1024;
   /// dimension of the qurey attribute
-  const int DA = 1;
+  const int DA = 128;
   /// distance measure (Euclidean or Cosine)
   const DistanceMeasure measure = Euclidean;
   const int DistPar = 4;
@@ -167,12 +168,13 @@ int main(int argc, char* argv[]) {
   }
 
   std::string base = (FLAGS_base == 1)?"":std::to_string(FLAGS_base);
+  std::string str_extension = (FLAGS_no_extension)?".noe":"";
   std::string base_filename = FLAGS_base_filename + 
               "sift" + std::to_string(FLAGS_base) + "m/base." + std::to_string(FLAGS_base) + "m.u8bin";
   std::string query_filename = FLAGS_query_filename + 
               "query.public.10K.u8bin";
   std::string cluster_filename = FLAGS_cluster_filename + 
-              "sift" + std::to_string(FLAGS_base) + "m/clusters." + std::to_string(FLAGS_cluster) + ".bin";
+              "sift" + std::to_string(FLAGS_base) + "m/clusters." + std::to_string(FLAGS_cluster) + str_extension + ".bin";
   std::string base_attr_filename = FLAGS_base_attr_filename + 
               "label_sift" + base + "_base_value_" + std::to_string(DBA) + ".txt";
   std::string query_attr_filename = FLAGS_query_attr_filename + 
