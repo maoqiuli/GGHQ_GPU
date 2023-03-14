@@ -41,14 +41,14 @@ inline bool file_exists(const std::string& name) {
 #include "ggnn/utils/cuda_knn_constants.cuh"
 
 DEFINE_string(
-    mode, "bqs",
+    mode, "bq",
     "Mode: bq -> build_and_query, bs -> build_and_store, lq -> load_and_query");
-DEFINE_string(base_filename, "", "path to file with base vectors");
-DEFINE_string(query_filename, "", "path to file with perform_query vectors");
-DEFINE_string(
-    groundtruth_filename, "",
-    "path to directory with groundtruth vectors of form idx_{B}M.ivecs");
-DEFINE_string(graph_dir, "/home/eva_data/zhanghy/ggnn-graph/", "directory to store and load ggnn graph files.");
+DEFINE_string(base_filename, "/home/maoqiuli21/nfs/data/sift/", "path to file with base vectors");
+DEFINE_string(query_filename, "/home/maoqiuli21/nfs/data/sift/", "path to file with perform_query vectors");
+DEFINE_string(base_attr_filename, "/home/maoqiuli21/nfs/data/label/", "path to file with base attributes");
+DEFINE_string(query_attr_filename, "/home/maoqiuli21/nfs/data/label/", "path to file with query attributes");
+DEFINE_string(groundtruth_filename, "/home/maoqiuli21/nfs/data/label/", "path to file with groundtruth");
+DEFINE_string(graph_dir, "/home/maoqiuli21/nfs/index_ggnnlbsearch/adage/", "directory to store and load ggnn graph files.");
 DEFINE_double(tau, 0.5, "Parameter tau");
 DEFINE_int32(factor, 1000000, "Factor");
 DEFINE_int32(base, 1, "N_base: base x factor");
@@ -72,10 +72,10 @@ int main(int argc, char* argv[]) {
   google::ParseCommandLineFlags(&argc, &argv, true);
 
   LOG(INFO) << "Reading files";
-  CHECK(file_exists(FLAGS_base_filename))
-      << "File for base vectors has to exist";
-  CHECK(file_exists(FLAGS_query_filename))
-      << "File for perform_query vectors has to exist";
+  // CHECK(file_exists(FLAGS_base_filename))
+  //     << "File for base vectors has to exist";
+  // CHECK(file_exists(FLAGS_query_filename))
+  //     << "File for perform_query vectors has to exist";
 
   CHECK_GE(FLAGS_tau, 0) << "Tau has to be bigger or equal 0.";
   CHECK_GE(FLAGS_refinement_iterations, 0)
@@ -100,17 +100,25 @@ int main(int argc, char* argv[]) {
   //
   // dataset configuration (here: SIFT1B)
   //
-  /// dimension of the dataset
+  /// dimension of the vector
   const int D = 128;
+  /// dimension of the attribute
+  const int DBA = 16;
+  /// dimension of the qurey attribute
+  const int DA = 1;
   /// distance measure (Euclidean or Cosine)
   const DistanceMeasure measure = Euclidean;
   //
   // search-graph configuration
   //
-  /// number of neighbors per point in the graph
-  const int KBuild = 20;
+  /// number of neighbors per point in the global graph
+  const int KBuild = 10;
   /// maximum number of inverse/symmetric links (KBuild / 2 usually works best)
   const int KF = KBuild / 2;
+  /// number of neighbors per point in the local graph
+  const int KBuild_ = 10;
+  /// maximum number of inverse/symmetric links (KBuild / 2 usually works best)
+  const int KF_ = KBuild_ / 2;
   /// segment/batch size (needs to be > KBuild-KF)
   const int S = 32;
   /// graph height / number of layers (4 usually performs best)
@@ -151,30 +159,37 @@ int main(int argc, char* argv[]) {
   }
 
   const size_t N_base = FLAGS_base * FLAGS_factor;
+  const size_t N_base_fac = FLAGS_base * FLAGS_factor / 1000000;
   const int N_shard = FLAGS_shard * FLAGS_factor;
 
-  std::cout << "FLAGS_groundtruth_filename: " << FLAGS_groundtruth_filename << "\n";
+  std::string base = (N_base_fac == 1)?"":std::to_string(N_base_fac);
+  std::string base_filename = FLAGS_base_filename + 
+              "sift" + std::to_string(N_base_fac) + "m/base." + std::to_string(N_base_fac) + "m.u8bin";
+  std::string query_filename = FLAGS_query_filename + 
+              "query.public.10K.u8bin";
+  std::string base_attr_filename = FLAGS_base_attr_filename + 
+              "label_sift" + base + "_base_value_" + std::to_string(DBA) + ".txt";
+  std::string query_attr_filename = FLAGS_query_attr_filename + 
+              "label_sift" + base + "_query_value_" + std::to_string(DBA) + "_labeldim_" + std::to_string(DA) + ".txt";
+  std::string groundtruth_filename = FLAGS_groundtruth_filename + 
+              "sift" + base + "_groundtruth_label_value_" + std::to_string(DBA) + "_labeldim_" + std::to_string(DA) + ".bin";
+  std::string graph_dir = FLAGS_graph_dir + 
+              "sift" + std::to_string(N_base_fac) + "m_" + std::to_string(DBA) + "/";
 
-//   char groundtruth_filename_buffer[64];
-//   snprintf(groundtruth_filename_buffer, 64, "/groundtruth.%dm.bin",
-//       static_cast<int>(N_base / 1000000));
-
-//   std::string groundtruth_filename =
-//       FLAGS_groundtruth_dir + groundtruth_filename_buffer;
-
-//   std::cout << "groundtruth_filename: " << groundtruth_filename << "\n";
-
-  typedef GGNNMultiGPU<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, KBuild,
-                       KF, KQuery, S>
+  typedef GGNNMultiGPU<measure, KeyT, ValueT, GAddrT, BaseT, BAddrT, D, DBA, DA, KBuild,
+                       KF, KBuild_, KF_, KQuery, S>
       GGNN;
-  GGNN ggnn{FLAGS_base_filename,
-            FLAGS_query_filename,
-            file_exists(FLAGS_groundtruth_filename) ? FLAGS_groundtruth_filename : "",
-            L,
-            static_cast<float>(FLAGS_tau),
-            N_base};
+  GGNN ggnn{
+      base_filename,
+      query_filename,
+      base_attr_filename,
+      query_attr_filename,
+      file_exists(groundtruth_filename) ? groundtruth_filename : "",
+      L,
+      static_cast<float>(FLAGS_tau),
+      N_base};
 
-  ggnn.ggnnMain(gpus, FLAGS_mode, N_shard, FLAGS_graph_dir,
+  ggnn.ggnnMain(gpus, FLAGS_mode, N_shard, graph_dir,
                 FLAGS_refinement_iterations, FLAGS_grid_search);
 
   printf("done! \n");
