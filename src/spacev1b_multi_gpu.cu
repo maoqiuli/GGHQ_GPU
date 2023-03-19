@@ -89,7 +89,7 @@ int main(int argc, char* argv[]) {
   /// data type for addressing points (needs to be able to represent N)
   using KeyT = int32_t;
   /// data type of the dataset (e.g., char, int, float)
-  using BaseT = uint8_t;
+  using BaseT = int8_t;
   /// data type of computed distances
   using ValueT = float;
   /// data type for addressing base-vectors (needs to be able to represent N*D)
